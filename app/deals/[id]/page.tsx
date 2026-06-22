@@ -121,72 +121,53 @@ export default function DealDetailPage() {
     })
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Memuat...</p>
-  if (errorMsg) return <p style={{ padding: 24, color: 'red' }}>{errorMsg}</p>
+  if (loading) return <p className="p-6">Memuat...</p>
+  if (errorMsg) return <p className="p-6 text-red-600">{errorMsg}</p>
   if (!deal) return null
 
   const currentStage = computeStage(deal)
   const currentStageIndex = STAGES.findIndex((s) => s.key === currentStage)
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-      <h1>Deal Detail</h1>
-      <p style={{ color: '#888', fontSize: 13 }}>
-        Dibuat {formatDate(deal.created_at)}
-      </p>
+    <div className="max-w-[600px] mx-auto p-6">
+      <h1 className="text-2xl font-bold">Deal Detail</h1>
+      <p className="text-muted text-[13px]">Dibuat {formatDate(deal.created_at)}</p>
 
       {/* STEPPER */}
-      <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0' }}>
+      <div className="flex items-center my-6">
         {STAGES.map((stage, i) => {
           const isDone = i < currentStageIndex
           const isCurrent = i === currentStageIndex
           return (
-            <div key={stage.key} style={{ display: 'flex', alignItems: 'center', flex: i < STAGES.length - 1 ? 1 : 0 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div
+              key={stage.key}
+              className={`flex items-center ${i < STAGES.length - 1 ? 'flex-1' : 'flex-none'}`}
+            >
+              <div className="flex flex-col items-center">
                 <div
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: isDone || isCurrent ? '#5B3FE0' : '#eee',
-                    color: isDone || isCurrent ? '#fff' : '#999',
-                  }}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                    isDone || isCurrent ? 'bg-primary text-white' : 'bg-line-light text-gray-400'
+                  }`}
                 >
                   {isDone ? '✓' : i + 1}
                 </div>
                 <span
-                  style={{
-                    fontSize: 11,
-                    marginTop: 4,
-                    textAlign: 'center',
-                    color: isCurrent ? '#5B3FE0' : '#999',
-                    fontWeight: isCurrent ? 700 : 400,
-                  }}
+                  className={`text-[11px] mt-1 text-center ${
+                    isCurrent ? 'text-primary font-bold' : 'text-gray-400 font-normal'
+                  }`}
                 >
                   {stage.label}
                 </span>
               </div>
               {i < STAGES.length - 1 && (
-                <div
-                  style={{
-                    flex: 1,
-                    height: 2,
-                    background: isDone ? '#5B3FE0' : '#eee',
-                    marginBottom: 16,
-                  }}
-                />
+                <div className={`flex-1 h-0.5 mb-4 ${isDone ? 'bg-primary' : 'bg-line-light'}`} />
               )}
             </div>
           )
         })}
       </div>
 
-      <p style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 24 }}>
+      <p className="text-[13px] text-muted text-center mb-6">
         Progress pengiriman diperbarui oleh Verifikator. Halaman ini hanya menampilkan status terkini.
       </p>
 
@@ -233,35 +214,21 @@ function SideCard({
   recipientUsername?: string
 }) {
   return (
-    <div
-      style={{
-        border: '1px solid #ddd',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        display: 'flex',
-        gap: 12,
-      }}
-    >
+    <div className="border border-line rounded-xl p-4 mb-4 flex gap-3">
       <div
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 8,
-          flexShrink: 0,
-          background: listing?.photo_urls?.[0]
-            ? `url(${listing.photo_urls[0]}) center/cover`
-            : '#000',
-        }}
+        className="w-16 h-16 rounded-lg flex-shrink-0 bg-black bg-cover bg-center"
+        style={
+          listing?.photo_urls?.[0]
+            ? { backgroundImage: `url(${listing.photo_urls[0]})` }
+            : undefined
+        }
       />
-      <div style={{ flex: 1 }}>
-        <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{title}</p>
+      <div className="flex-1">
+        <p className="m-0 text-[13px] text-muted">{title}</p>
         <strong>{listing?.title ?? '...'}</strong>
-        <p style={{ margin: '4px 0 0', fontSize: 13 }}>
-          Tujuan: @{recipientUsername ?? '...'}
-        </p>
+        <p className="mt-1 mb-0 text-[13px]">Tujuan: @{recipientUsername ?? '...'}</p>
 
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="mt-2 flex flex-col gap-1">
           <StatusLine label="Dikirim" done={shipped} doneAt={shippedAt} />
           <StatusLine label="Diterima" done={received} doneAt={receivedAt} />
         </div>
@@ -272,23 +239,15 @@ function SideCard({
 
 function StatusLine({ label, done, doneAt }: { label: string; done: boolean; doneAt: string | null }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+    <div className="flex items-center gap-1.5 text-[13px]">
       <span
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: '50%',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 10,
-          background: done ? '#D4EDDA' : '#eee',
-          color: done ? '#155724' : '#999',
-        }}
+        className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] ${
+          done ? 'bg-success-bg text-success' : 'bg-line-light text-gray-400'
+        }`}
       >
         {done ? '✓' : ''}
       </span>
-      <span style={{ color: done ? '#000' : '#999' }}>
+      <span className={done ? 'text-black' : 'text-gray-400'}>
         {label} {done && doneAt ? `· ${doneAt}` : done ? '' : '(menunggu)'}
       </span>
     </div>

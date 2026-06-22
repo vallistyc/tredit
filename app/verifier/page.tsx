@@ -116,68 +116,47 @@ export default function VerifierDashboardPage() {
     router.push(`/verifier/${dealId}`)
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Memuat...</p>
+  if (loading) return <p className="p-6">Memuat...</p>
 
   if (isVerifier === false) {
-    return <p style={{ padding: 24 }}>Halaman ini khusus untuk Verifikator.</p>
+    return <p className="p-6">Halaman ini khusus untuk Verifikator.</p>
   }
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-      <h1>Dashboard Verifikator</h1>
+    <div className="max-w-[600px] mx-auto p-6">
+      <h1 className="text-2xl font-bold">Dashboard Verifikator</h1>
 
-      {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
 
-      <h2 style={{ fontSize: 16, marginTop: 24 }}>Tugas Saya</h2>
-      {myTasks.length === 0 && <p style={{ color: '#888', fontSize: 14 }}>Belum ada tugas berjalan.</p>}
+      <h2 className="text-base font-semibold mt-6">Tugas Saya</h2>
+      {myTasks.length === 0 && <p className="text-muted text-sm">Belum ada tugas berjalan.</p>}
       {myTasks.map((deal) => (
         <div
           key={deal.id}
           onClick={() => router.push(`/verifier/${deal.id}`)}
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: 12,
-            padding: 16,
-            marginBottom: 12,
-            cursor: 'pointer',
-          }}
+          className="border border-line rounded-xl p-4 mb-3 cursor-pointer"
         >
-          <p style={{ margin: 0, fontWeight: 600 }}>
+          <p className="m-0 font-semibold">
             {listingTitles[deal.side_a_listing_id] ?? '...'} ⇄ {listingTitles[deal.side_b_listing_id] ?? '...'}
           </p>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#888' }}>Status: {deal.status}</p>
+          <p className="mt-1 mb-0 text-[13px] text-muted">Status: {deal.status}</p>
         </div>
       ))}
 
-      <h2 style={{ fontSize: 16, marginTop: 32 }}>Tugas Tersedia</h2>
-      {unclaimed.length === 0 && <p style={{ color: '#888', fontSize: 14 }}>Tidak ada tugas baru.</p>}
+      <h2 className="text-base font-semibold mt-8">Tugas Tersedia</h2>
+      {unclaimed.length === 0 && <p className="text-muted text-sm">Tidak ada tugas baru.</p>}
       {unclaimed.map((deal) => (
         <div
           key={deal.id}
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: 12,
-            padding: 16,
-            marginBottom: 12,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
+          className="border border-line rounded-xl p-4 mb-3 flex justify-between items-center"
         >
-          <p style={{ margin: 0, fontWeight: 600 }}>
+          <p className="m-0 font-semibold">
             {listingTitles[deal.side_a_listing_id] ?? '...'} ⇄ {listingTitles[deal.side_b_listing_id] ?? '...'}
           </p>
           <button
             onClick={() => handleClaim(deal.id)}
             disabled={claimingId === deal.id}
-            style={{
-              padding: '8px 16px',
-              background: '#5B3FE0',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              cursor: 'pointer',
-            }}
+            className="px-4 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
           >
             {claimingId === deal.id ? 'Mengambil...' : 'Ambil Tugas'}
           </button>

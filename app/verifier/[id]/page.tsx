@@ -164,8 +164,8 @@ export default function VerifierWorkPage() {
     await updateDealField({ status: 'completed' })
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Memuat...</p>
-  if (errorMsg && !deal) return <p style={{ padding: 24, color: 'red' }}>{errorMsg}</p>
+  if (loading) return <p className="p-6">Memuat...</p>
+  if (errorMsg && !deal) return <p className="p-6 text-red-600">{errorMsg}</p>
   if (!deal) return null
 
   const bothInitialReceived = deal.side_a_received && deal.side_b_received
@@ -173,15 +173,17 @@ export default function VerifierWorkPage() {
   const reportSent = !!deal.verification_reported_at
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-      <button onClick={() => router.push('/verifier')} style={{ marginBottom: 16 }}>
+    <div className="max-w-[600px] mx-auto p-6">
+      <button onClick={() => router.push('/verifier')} className="mb-4 cursor-pointer">
         ← Kembali ke daftar tugas
       </button>
 
-      <h1>Verifikasi Deal</h1>
-      <p style={{ fontSize: 13, color: '#888' }}>Status saat ini: <strong>{deal.status}</strong></p>
+      <h1 className="text-2xl font-bold">Verifikasi Deal</h1>
+      <p className="text-[13px] text-muted">
+        Status saat ini: <strong>{deal.status}</strong>
+      </p>
 
-      {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
 
       {/* TAHAP 1: Etape Owner -> Verifikator */}
       <Section title="Tahap 1 — Penerimaan Barang dari Owner">
@@ -210,7 +212,7 @@ export default function VerifierWorkPage() {
       {/* TAHAP 2: Form verifikasi keaslian, hanya aktif kalau kedua barang sudah diterima */}
       <Section title="Tahap 2 — Verifikasi Keaslian">
         {!bothInitialReceived && (
-          <p style={{ fontSize: 13, color: '#888' }}>
+          <p className="text-[13px] text-muted">
             Menunggu kedua barang diterima dulu sebelum verifikasi bisa diisi.
           </p>
         )}
@@ -224,7 +226,7 @@ export default function VerifierWorkPage() {
               <button
                 onClick={handleSubmitReports}
                 disabled={busy}
-                style={{ marginTop: 8, padding: '8px 16px', background: '#5B3FE0', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+                className="mt-2 px-4 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
               >
                 {reportsExist ? 'Update Laporan' : 'Simpan Laporan'}
               </button>
@@ -236,14 +238,14 @@ export default function VerifierWorkPage() {
       {/* TAHAP 3: Kirim laporan ke kedua pihak */}
       <Section title="Tahap 3 — Pelaporan Hasil">
         {reportSent ? (
-          <p style={{ fontSize: 13, color: '#155724' }}>
+          <p className="text-[13px] text-success">
             ✓ Laporan sudah dikirim ke kedua pihak pada {new Date(deal.verification_reported_at!).toLocaleString('id-ID')}
           </p>
         ) : (
           <button
             onClick={handleSendReportToParties}
             disabled={busy || !reportsExist}
-            style={{ padding: '8px 16px', background: '#5B3FE0', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+            className="px-4 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
           >
             Kirim Laporan ke Kedua Pihak
           </button>
@@ -252,7 +254,7 @@ export default function VerifierWorkPage() {
 
       {/* TAHAP 4: Cross-shipping ke penerima asli */}
       <Section title="Tahap 4 — Cross-Shipping ke Penerima Asli">
-        {!reportSent && <p style={{ fontSize: 13, color: '#888' }}>Menunggu laporan verifikasi dikirim dulu.</p>}
+        {!reportSent && <p className="text-[13px] text-muted">Menunggu laporan verifikasi dikirim dulu.</p>}
         {reportSent && (
           <>
             <ShippingRow
@@ -284,14 +286,14 @@ export default function VerifierWorkPage() {
         <button
           onClick={handleComplete}
           disabled={busy}
-          style={{ width: '100%', padding: 12, background: '#155724', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}
+          className="w-full py-3 bg-success text-white border-none rounded-lg cursor-pointer font-bold disabled:opacity-50 disabled:cursor-default"
         >
           Tandai Deal Selesai
         </button>
       )}
 
       {deal.status === 'completed' && (
-        <p style={{ textAlign: 'center', fontWeight: 700, color: '#155724' }}>✓ Deal Selesai</p>
+        <p className="text-center font-bold text-success">✓ Deal Selesai</p>
       )}
     </div>
   )
@@ -299,8 +301,8 @@ export default function VerifierWorkPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-      <h3 style={{ marginTop: 0, fontSize: 15 }}>{title}</h3>
+    <div className="border border-line rounded-xl p-4 mb-4">
+      <h3 className="mt-0 mb-3 text-[15px] font-semibold">{title}</h3>
       {children}
     </div>
   )
@@ -326,38 +328,24 @@ function ShippingRow({
   busy: boolean
 }) {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>{label}</p>
-      <div style={{ display: 'flex', gap: 8 }}>
+    <div className="mb-3">
+      <p className="mb-1 text-sm font-semibold">{label}</p>
+      <div className="flex gap-2">
         <button
           onClick={onMarkShipped}
           disabled={busy || shipped}
-          style={{
-            flex: 1,
-            padding: 6,
-            fontSize: 13,
-            background: shipped ? '#D4EDDA' : '#fff',
-            color: shipped ? '#155724' : '#333',
-            border: '1px solid #ccc',
-            borderRadius: 6,
-            cursor: shipped ? 'default' : 'pointer',
-          }}
+          className={`flex-1 py-1.5 text-[13px] border border-line-strong rounded-md ${
+            shipped ? 'bg-success-bg text-success cursor-default' : 'bg-white text-gray-800 cursor-pointer'
+          }`}
         >
           {shipped ? `✓ Dikirim ${shippedAt ? new Date(shippedAt).toLocaleDateString('id-ID') : ''}` : 'Tandai Dikirim'}
         </button>
         <button
           onClick={onMarkReceived}
           disabled={busy || !shipped || received}
-          style={{
-            flex: 1,
-            padding: 6,
-            fontSize: 13,
-            background: received ? '#D4EDDA' : '#fff',
-            color: received ? '#155724' : '#333',
-            border: '1px solid #ccc',
-            borderRadius: 6,
-            cursor: !shipped || received ? 'default' : 'pointer',
-          }}
+          className={`flex-1 py-1.5 text-[13px] border border-line-strong rounded-md ${
+            received ? 'bg-success-bg text-success cursor-default' : 'bg-white text-gray-800'
+          } ${!shipped || received ? 'cursor-default' : 'cursor-pointer'}`}
         >
           {received ? `✓ Diterima ${receivedAt ? new Date(receivedAt).toLocaleDateString('id-ID') : ''}` : 'Tandai Diterima'}
         </button>
@@ -378,9 +366,9 @@ function ReportForm({
   disabled: boolean
 }) {
   return (
-    <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #eee' }}>
-      <p style={{ fontWeight: 600, fontSize: 14 }}>{title}</p>
-      <label style={{ display: 'block', fontSize: 13, marginBottom: 4 }}>
+    <div className="mb-4 pb-4 border-b border-line-light">
+      <p className="font-semibold text-sm">{title}</p>
+      <label className="block text-[13px] mb-1">
         <input
           type="checkbox"
           checked={value.is_authentic}
@@ -389,7 +377,7 @@ function ReportForm({
         />{' '}
         Barang asli (authentic)
       </label>
-      <label style={{ display: 'block', fontSize: 13, marginBottom: 4 }}>
+      <label className="block text-[13px] mb-1">
         <input
           type="checkbox"
           checked={value.is_condition_match}
@@ -404,7 +392,7 @@ function ReportForm({
         disabled={disabled}
         onChange={(e) => onChange({ ...value, notes: e.target.value })}
         rows={2}
-        style={{ width: '100%', marginTop: 4, fontSize: 13 }}
+        className="w-full mt-1 text-[13px] border border-line rounded-md p-1.5"
       />
     </div>
   )

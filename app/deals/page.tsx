@@ -19,6 +19,13 @@ type BidRow = {
   pitcher_username?: string
 }
 
+const STATUS_CLASSES: Record<string, string> = {
+  pending: 'bg-warning-bg text-warning',
+  accepted: 'bg-success-bg text-success',
+  rejected: 'bg-danger-bg text-danger',
+}
+const STATUS_FALLBACK = 'bg-gray-100 text-gray-700'
+
 export default function DealsPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'masuk' | 'diajukan'>('masuk')
@@ -181,119 +188,71 @@ export default function DealsPage() {
   }
 
   function statusBadge(status: string) {
-    const colors: Record<string, { bg: string; text: string }> = {
-      pending: { bg: '#FFF3CD', text: '#856404' },
-      accepted: { bg: '#D4EDDA', text: '#155724' },
-      rejected: { bg: '#F8D7DA', text: '#721C24' },
-    }
-    const c = colors[status] ?? { bg: '#eee', text: '#333' }
+    const classes = STATUS_CLASSES[status] ?? STATUS_FALLBACK
     return (
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          padding: '2px 8px',
-          borderRadius: 8,
-          background: c.bg,
-          color: c.text,
-        }}
-      >
+      <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${classes}`}>
         {status}
       </span>
     )
   }
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-      <h1>Deals</h1>
+    <div className="max-w-[600px] mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Deals</h1>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <div className="flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab('masuk')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 20,
-            border: '1px solid #5B3FE0',
-            background: activeTab === 'masuk' ? '#5B3FE0' : 'transparent',
-            color: activeTab === 'masuk' ? '#fff' : '#5B3FE0',
-            cursor: 'pointer',
-          }}
+          className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
+            activeTab === 'masuk' ? 'bg-primary text-white' : 'bg-transparent text-primary'
+          }`}
         >
           Masuk
         </button>
         <button
           onClick={() => setActiveTab('diajukan')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 20,
-            border: '1px solid #5B3FE0',
-            background: activeTab === 'diajukan' ? '#5B3FE0' : 'transparent',
-            color: activeTab === 'diajukan' ? '#fff' : '#5B3FE0',
-            cursor: 'pointer',
-          }}
+          className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
+            activeTab === 'diajukan' ? 'bg-primary text-white' : 'bg-transparent text-primary'
+          }`}
         >
           Diajukan
         </button>
       </div>
 
       {loading && <p>Memuat...</p>}
-      {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
 
       {/* TAB: Masuk */}
       {!loading && activeTab === 'masuk' && (
         <div>
           {incomingBids.length === 0 && <p>Belum ada bid yang masuk.</p>}
           {incomingBids.map((bid) => (
-            <div
-              key={bid.id}
-              style={{
-                border: '1px solid #ddd',
-                borderRadius: 12,
-                padding: 16,
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div key={bid.id} className="border border-line rounded-xl p-4 mb-3">
+              <div className="flex justify-between mb-2">
                 <strong>{bid.listing_title}</strong>
                 {statusBadge(bid.status)}
               </div>
-              <p style={{ margin: '4px 0', fontSize: 14 }}>
+              <p className="my-1 text-sm">
                 Ditawar oleh <strong>@{bid.bidder_username}</strong> dengan{' '}
                 <strong>{bid.offered_listing_title}</strong>
               </p>
               {bid.message && (
-                <p style={{ margin: '4px 0', fontSize: 13, color: '#666' }}>"{bid.message}"</p>
+                <p className="my-1 text-[13px] text-muted">&quot;{bid.message}&quot;</p>
               )}
 
               {bid.status === 'pending' && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => handleAccept(bid.id)}
                     disabled={processingId === bid.id}
-                    style={{
-                      flex: 1,
-                      padding: 8,
-                      background: '#5B3FE0',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                    }}
+                    className="flex-1 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   >
                     {processingId === bid.id ? 'Memproses...' : 'Accept'}
                   </button>
                   <button
                     onClick={() => handleReject(bid.id)}
                     disabled={processingId === bid.id}
-                    style={{
-                      flex: 1,
-                      padding: 8,
-                      background: '#fff',
-                      color: '#d32f2f',
-                      border: '1px solid #d32f2f',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                    }}
+                    className="flex-1 py-2 bg-white text-danger-button border border-danger-button rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   >
                     Reject
                   </button>
@@ -309,24 +268,16 @@ export default function DealsPage() {
         <div>
           {myBids.length === 0 && <p>Kamu belum mengajukan barter ke manapun.</p>}
           {myBids.map((bid) => (
-            <div
-              key={bid.id}
-              style={{
-                border: '1px solid #ddd',
-                borderRadius: 12,
-                padding: 16,
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div key={bid.id} className="border border-line rounded-xl p-4 mb-3">
+              <div className="flex justify-between mb-2">
                 <strong>{bid.listing_title}</strong>
                 {statusBadge(bid.status)}
               </div>
-              <p style={{ margin: '4px 0', fontSize: 14 }}>
+              <p className="my-1 text-sm">
                 Diajukan ke <strong>@{bid.pitcher_username}</strong>
               </p>
               {bid.message && (
-                <p style={{ margin: '4px 0', fontSize: 13, color: '#666' }}>"{bid.message}"</p>
+                <p className="my-1 text-[13px] text-muted">&quot;{bid.message}&quot;</p>
               )}
             </div>
           ))}

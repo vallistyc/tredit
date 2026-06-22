@@ -101,23 +101,18 @@ export default function HomePage() {
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: 24 }}>
-      <h1>TREDIT</h1>
+    <div className="max-w-[960px] mx-auto p-6">
+      <h1 className="text-2xl text-center font-medium mb-5 text-[#4b00dc]">Catch your Goods!</h1>
 
       {/* Tombol filter kategori */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+      <div className="flex gap-2 mb-6 flex-wrap">
         {CATEGORIES.map((cat) => (
           <button
             key={cat.value}
             onClick={() => setActiveCategory(cat.value)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 20,
-              border: '1px solid #5B3FE0',
-              background: activeCategory === cat.value ? '#5B3FE0' : 'transparent',
-              color: activeCategory === cat.value ? '#fff' : '#5B3FE0',
-              cursor: 'pointer',
-            }}
+            className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
+              activeCategory === cat.value ? 'bg-primary border-3 font-semibold text-[#4b00dc]' : 'bg-transparent text-primary'
+            }`}
           >
             {cat.label}
           </button>
@@ -131,41 +126,28 @@ export default function HomePage() {
       )}
 
       {/* Grid card listing */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: 16,
-        }}
-      >
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
         {listings.map((listing) => (
           <a
             key={listing.id}
             href={`/listing/${listing.id}`}
-            style={{
-              textDecoration: 'none',
-              color: 'inherit',
-              border: '1px solid #ddd',
-              borderRadius: 12,
-              overflow: 'hidden',
-            }}
+            className="block no-underline text-inherit border border-line rounded-xl overflow-hidden"
           >
             {/* Foto */}
             <div
-              style={{
-                width: '100%',
-                height: 180,
-                background: listing.photo_urls[0]
-                  ? `url(${listing.photo_urls[0]}) center/cover`
-                  : '#000',
-              }}
+              className="w-full h-[180px] bg-black bg-cover bg-center"
+              style={
+                listing.photo_urls[0]
+                  ? { backgroundImage: `url(${listing.photo_urls[0]})` }
+                  : undefined
+              }
             />
 
             {/* Judul + harga */}
-            <div style={{ background: '#C8BEF5', padding: '12px 14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <h3 style={{ margin: 0, fontSize: 18 }}>{listing.title}</h3>
-                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right' }}>
+            <div className="bg-primary-card px-[14px] py-3">
+              <div className="flex justify-between">
+                <h3 className="m-0 text-lg font-semibold">{listing.title}</h3>
+                <span className="text-[13px] font-semibold text-right">
                   E.P
                   <br />
                   {formatRupiah(listing.estimated_value)}
@@ -174,25 +156,25 @@ export default function HomePage() {
             </div>
 
             {/* Info badges */}
-            <div style={{ padding: '10px 14px' }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            <div className="py-[10px] px-[14px]">
+              <div className="flex gap-1.5 flex-wrap mb-2">
                 {listing.location && (
-                  <span style={{ fontSize: 12, background: '#EEEDFE', padding: '4px 8px', borderRadius: 8 }}>
+                  <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
                     📍 {listing.location}
                   </span>
                 )}
-                <span style={{ fontSize: 12, background: '#EEEDFE', padding: '4px 8px', borderRadius: 8 }}>
+                <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
                   👋 0 Bids
                 </span>
-                <span style={{ fontSize: 12, background: '#EEEDFE', padding: '4px 8px', borderRadius: 8 }}>
+                <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
                   🗓 {formatRelativeDate(listing.created_at)}
                 </span>
               </div>
 
               {listing.expected_goods.length > 0 && (
-                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                <div className="text-[13px] mb-1.5">
                   <strong>Expected Goods</strong>
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  <ul className="list-disc pl-[18px] mt-1">
                     {listing.expected_goods.map((item, i) => (
                       <li key={i}>{item}</li>
                     ))}
@@ -201,9 +183,9 @@ export default function HomePage() {
               )}
 
               {listing.condition_notes && (
-                <div style={{ fontSize: 13 }}>
+                <div className="text-[13px]">
                   <strong>Condition</strong>
-                  <p style={{ margin: '4px 0 0' }}>{listing.condition_notes}</p>
+                  <p className="mt-1">{listing.condition_notes}</p>
                 </div>
               )}
             </div>

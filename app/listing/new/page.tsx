@@ -108,30 +108,35 @@ export default function NewListingPage() {
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: 24 }}>
-      <h1>Tambah Listing</h1>
+    <div className="max-w-[480px] mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Tambah Listing</h1>
 
       {estimating && (
-        <div style={{ padding: 16, background: '#EEEDFE', borderRadius: 8, marginBottom: 16 }}>
+        <div className="p-4 bg-primary-soft rounded-lg mb-4">
           <p>Estimating the price...</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit}>
-        <div>
-          <label>Judul Barang</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Judul Barang</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="contoh: Air Jordan Low"
             required
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
-        <div>
-          <label>Kategori</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Kategori</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
             <option value="fashion">Fashion</option>
             <option value="gadget">Gadget</option>
             <option value="aksesoris">Aksesoris</option>
@@ -139,58 +144,69 @@ export default function NewListingPage() {
           </select>
         </div>
 
-        <div>
-          <label>Brand</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Brand</label>
           <input
             type="text"
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
-        <div>
-          <label>Kondisi Barang</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Kondisi Barang</label>
           <textarea
             value={conditionNotes}
             onChange={(e) => setConditionNotes(e.target.value)}
             placeholder="contoh: no box, sedikit baret di bagian sol"
             rows={3}
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
-        <div>
-          <label>Lokasi</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Lokasi</label>
           <input
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="contoh: Gubeng"
             required
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
-        <div>
-          <label>Barang yang Diharapkan (pisahkan dengan koma)</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">
+            Barang yang Diharapkan (pisahkan dengan koma)
+          </label>
           <input
             type="text"
             value={expectedGoodsInput}
             onChange={(e) => setExpectedGoodsInput(e.target.value)}
             placeholder="contoh: Adidas, Puma, NB"
+            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
-        <div>
-          <label>Foto Barang</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Foto Barang</label>
           <input
             type="file"
             accept="image/*"
             onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+            className="w-full text-sm"
           />
         </div>
 
-        {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+        {errorMsg && <p className="text-red-600 text-sm mb-4">{errorMsg}</p>}
 
-        <button type="submit" disabled={loading || estimating}>
+        <button
+          type="submit"
+          disabled={loading || estimating}
+          className="w-full bg-primary text-white font-semibold py-3 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
+        >
           {estimating
             ? 'Estimating the price...'
             : loading

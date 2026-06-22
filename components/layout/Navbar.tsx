@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import Logout from "@/components/Logout"
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -20,48 +21,34 @@ export default function Navbar() {
         {/* Desktop Menu */}
         <div className="hidden items-center gap-8 md:flex">
           <Link
-            href="/"
+            href="/home"
             className="text-sm font-medium text-gray-700 transition hover:text-black"
           >
             Home
           </Link>
 
           <Link
-            href="/products"
+            href="/deals"
             className="text-sm font-medium text-gray-700 transition hover:text-black"
           >
-            Products
+            Deals
           </Link>
 
           <Link
-            href="/about"
+            href="/profile"
             className="text-sm font-medium text-gray-700 transition hover:text-black"
           >
-            About
-          </Link>
-
-          <Link
-            href="/contact"
-            className="text-sm font-medium text-gray-700 transition hover:text-black"
-          >
-            Contact
+            Profile
           </Link>
         </div>
 
         {/* Desktop Buttons */}
         <div className="hidden items-center gap-3 md:flex">
           <Link
-            href="/login"
-            className="rounded-lg border px-4 py-2 text-sm font-medium transition hover:bg-gray-100"
-          >
-            Login
-          </Link>
-
-          <Link
             href="/register"
             className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
           >
-            Register
+            Add Pitch
           </Link>
         </div>
 
@@ -79,48 +66,40 @@ export default function Navbar() {
         <div className="border-t md:hidden">
           <div className="flex flex-col p-4">
             <Link
-              href="/"
+              href="/home"
+              onClick={() => setIsOpen(false)}
               className="rounded-md px-3 py-2 hover:bg-gray-100"
             >
               Home
             </Link>
 
             <Link
-              href="/products"
+              href="/deals"
+              onClick={() => setIsOpen(false)}
               className="rounded-md px-3 py-2 hover:bg-gray-100"
             >
-              Products
+              Deals
             </Link>
 
             <Link
-              href="/about"
+              href="/profile"
+              onClick={() => setIsOpen(false)}
               className="rounded-md px-3 py-2 hover:bg-gray-100"
             >
-              About
+              Profile
             </Link>
 
             <Link
-              href="/contact"
-              className="rounded-md px-3 py-2 hover:bg-gray-100"
+              href="/listing/new"
+              onClick={() => setIsOpen(false)}
+              className="rounded-md px-3 py-2 text-amber-400 font-semibold bg-[#4b00dc#4b00dc] hover:bg-[#2e0189]"
             >
-              Contact
+              Add Pitch
             </Link>
 
             <hr className="my-3" />
 
-            <Link
-              href="/login"
-              className="rounded-md px-3 py-2 hover:bg-gray-100"
-            >
-              Login
-            </Link>
-
-            <Link
-              href="/register"
-              className="rounded-md bg-black px-3 py-2 text-center text-white"
-            >
-              Register
-            </Link>
+            <Logout />
           </div>
         </div>
       )}

@@ -1,0 +1,14 @@
+// components/layout/NavbarWrapper.tsx
+'use client'
+
+import { usePathname } from 'next/navigation'
+import Navbar from '@/components/layout/Navbar'
+
+export default function NavbarWrapper() {
+  const pathname = usePathname()
+  const hideNavbar = ['/login', '/signup'].includes(pathname)
+
+  if (hideNavbar) return null
+
+  return <Navbar />
+}

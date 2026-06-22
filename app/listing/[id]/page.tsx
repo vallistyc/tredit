@@ -146,39 +146,36 @@ export default function ListingDetailPage() {
     }).format(value)
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Memuat...</p>
-  if (!listing) return <p style={{ padding: 24 }}>Listing tidak ditemukan</p>
+  if (loading) return <p className="p-6">Memuat...</p>
+  if (!listing) return <p className="p-6">Listing tidak ditemukan</p>
 
   const isOwner = currentUserId === listing.owner_id
   const isLocked = listing.status !== 'active'
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: 24 }}>
+    <div className="max-w-[480px] mx-auto p-6">
       <div
-        style={{
-          width: '100%',
-          height: 280,
-          background: listing.photo_urls[0]
-            ? `url(${listing.photo_urls[0]}) center/cover`
-            : '#222',
-          borderRadius: 12,
-          marginBottom: 16,
-        }}
+        className="w-full h-[280px] bg-[#222] bg-cover bg-center rounded-xl mb-4"
+        style={
+          listing.photo_urls[0]
+            ? { backgroundImage: `url(${listing.photo_urls[0]})` }
+            : undefined
+        }
       />
 
-      <h1 style={{ marginBottom: 4 }}>{listing.title}</h1>
-      {listing.brand && <p style={{ color: '#888', margin: '0 0 8px' }}>{listing.brand}</p>}
+      <h1 className="text-2xl font-bold mb-1">{listing.title}</h1>
+      {listing.brand && <p className="text-muted m-0 mb-2">{listing.brand}</p>}
 
-      <p style={{ fontSize: 14, fontWeight: 600 }}>
+      <p className="text-sm font-semibold">
         E.P {formatRupiah(listing.estimated_value)}
       </p>
 
       {listing.location && <p>📍 {listing.location}</p>}
 
       {listing.expected_goods.length > 0 && (
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <strong>Expected Goods</strong>
-          <ul>
+          <ul className="list-disc pl-5 mt-1">
             {listing.expected_goods.map((item, i) => (
               <li key={i}>{item}</li>
             ))}
@@ -187,71 +184,53 @@ export default function ListingDetailPage() {
       )}
 
       {listing.condition_notes && (
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <strong>Kondisi</strong>
           <p>{listing.condition_notes}</p>
         </div>
       )}
 
-      {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
 
       {/* Tombol Catch It — hanya muncul kalau bukan pemilik dan listing masih active */}
       {!isOwner && !isLocked && (
         <button
           onClick={openCatchModal}
-          style={{
-            marginTop: 24,
-            width: '100%',
-            padding: 16,
-            background: '#5B3FE0',
-            color: '#FFB800',
-            fontWeight: 700,
-            fontSize: 16,
-            border: 'none',
-            borderRadius: 12,
-            cursor: 'pointer',
-          }}
+          className="mt-6 w-full py-4 bg-primary text-accent font-bold text-base border-none rounded-xl cursor-pointer"
         >
           Catch It
         </button>
       )}
 
       {isLocked && !isOwner && (
-        <p style={{ marginTop: 24, textAlign: 'center', color: '#888' }}>
+        <p className="mt-6 text-center text-muted">
           Listing ini sedang dalam proses deal.
         </p>
       )}
 
       {/* MODAL 1: Pilih barang yang mau ditawarkan */}
       {showCatchModal && (
-        <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h2 style={{ flexShrink: 0, margin: '0 0 16px' }}>Tawarkan Barangmu</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-[400px] w-[90%] max-h-[80vh] flex flex-col">
+            <h2 className="flex-shrink-0 m-0 mb-4 text-xl font-bold">Tawarkan Barangmu</h2>
 
             {myListings.length === 0 && (
-              <p style={{ flexShrink: 0 }}>
+              <p className="flex-shrink-0">
                 Kamu belum punya listing aktif untuk ditawarkan. Tambah listing dulu.
               </p>
             )}
 
             <form
               onSubmit={handleProceedToPayment}
-              style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+              className="flex flex-col flex-1 min-h-0"
             >
-              <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+              <div className="overflow-y-auto flex-1 min-h-0">
                 {myListings.map((item) => (
                   <label
                     key={item.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: 10,
-                      border: `1px solid ${selectedOfferId === item.id ? '#5B3FE0' : '#ddd'}`,
-                      borderRadius: 8,
-                      marginBottom: 8,
-                      cursor: 'pointer',
-                    }}
+                    className={`flex items-center gap-2 p-[10px] border rounded-lg mb-2 cursor-pointer ${
+                      selectedOfferId === item.id ? 'border-primary' : 'border-line'
+                    }`}
                   >
                     <input
                       type="radio"
@@ -261,9 +240,9 @@ export default function ListingDetailPage() {
                       onChange={(e) => setSelectedOfferId(e.target.value)}
                     />
                     <div>
-                      <div style={{ fontWeight: 600 }}>{item.title}</div>
+                      <div className="font-semibold">{item.title}</div>
                       {item.brand && (
-                        <div style={{ fontSize: 12, color: '#888' }}>{item.brand}</div>
+                        <div className="text-xs text-muted">{item.brand}</div>
                       )}
                     </div>
                   </label>
@@ -274,24 +253,27 @@ export default function ListingDetailPage() {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   rows={3}
-                  style={{ width: '100%', marginTop: 8, padding: 8, borderRadius: 8, border: '1px solid #ddd' }}
+                  className="w-full mt-2 p-2 rounded-lg border border-line"
                 />
 
-                {errorMsg && <p style={{ color: 'red', fontSize: 13 }}>{errorMsg}</p>}
+                {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 16, flexShrink: 0 }}>
+              <div className="flex gap-2 mt-4 flex-shrink-0">
                 <button
                   type="button"
-                  onClick={() => { setShowCatchModal(false); setErrorMsg('') }}
-                  style={btnSecondary}
+                  onClick={() => {
+                    setShowCatchModal(false)
+                    setErrorMsg('')
+                  }}
+                  className="flex-1 py-3 bg-white text-primary border border-primary rounded-lg cursor-pointer font-semibold"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={myListings.length === 0}
-                  style={btnPrimary}
+                  className="flex-1 py-3 bg-primary text-white border-none rounded-lg cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-default"
                 >
                   Lanjut
                 </button>
@@ -303,49 +285,54 @@ export default function ListingDetailPage() {
 
       {/* MODAL 2: Konfirmasi pembayaran */}
       {showPaymentConfirm && (
-        <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h2 style={{ flexShrink: 0, margin: '0 0 16px' }}>Konfirmasi Pembayaran</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-[400px] w-[90%] max-h-[80vh] flex flex-col">
+            <h2 className="flex-shrink-0 m-0 mb-4 text-xl font-bold">Konfirmasi Pembayaran</h2>
 
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="flex justify-between mb-2">
                 <span>Platform Fee</span>
                 <span>{formatRupiah(PLATFORM_FEE)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div className="flex justify-between mb-2">
                 <span>Escrow Fee</span>
                 <span>{formatRupiah(ESCROW_FEE)}</span>
               </div>
-              <hr />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginTop: 8 }}>
+              <hr className="border-t border-line my-2" />
+              <div className="flex justify-between font-bold mt-2">
                 <span>Total</span>
                 <span>{formatRupiah(ESCROW_FEE + PLATFORM_FEE)}</span>
               </div>
 
-              <div style={{ marginTop: 16, padding: 12, background: '#EEEDFE', borderRadius: 8, fontSize: 13 }}>
-                <p style={{ margin: '0 0 4px' }}>✅ Platform Fee tidak dapat dikembalikan.</p>
-                <p style={{ margin: 0 }}>🔒 Escrow Fee dikembalikan jika tawaran ditolak atau barang terbukti valid saat selesai.</p>
+              <div className="mt-4 p-3 bg-primary-soft rounded-lg text-sm">
+                <p className="m-0 mb-1">✅ Platform Fee tidak dapat dikembalikan.</p>
+                <p className="m-0">
+                  🔒 Escrow Fee dikembalikan jika tawaran ditolak atau barang terbukti valid saat selesai.
+                </p>
               </div>
 
-              <p style={{ fontSize: 13, color: '#888', marginTop: 12 }}>
+              <p className="text-sm text-muted mt-3">
                 Barangmu akan dikunci sementara selama proses ini berlangsung.
               </p>
 
-              {errorMsg && <p style={{ color: 'red', fontSize: 13 }}>{errorMsg}</p>}
+              {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexShrink: 0 }}>
+            <div className="flex gap-2 mt-4 flex-shrink-0">
               <button
                 type="button"
-                onClick={() => { setShowPaymentConfirm(false); setShowCatchModal(true) }}
-                style={btnSecondary}
+                onClick={() => {
+                  setShowPaymentConfirm(false)
+                  setShowCatchModal(true)
+                }}
+                className="flex-1 py-3 bg-white text-primary border border-primary rounded-lg cursor-pointer font-semibold"
               >
                 Kembali
               </button>
               <button
                 onClick={handleConfirmPayment}
                 disabled={submitting}
-                style={btnPrimary}
+                className="flex-1 py-3 bg-primary text-white border-none rounded-lg cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-default"
               >
                 {submitting ? 'Memproses...' : 'Konfirmasi & Bayar'}
               </button>
@@ -355,47 +342,4 @@ export default function ListingDetailPage() {
       )}
     </div>
   )
-}
-
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0, left: 0, right: 0, bottom: 0,
-  background: 'rgba(0,0,0,0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 50,
-}
-
-const modalStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 12,
-  padding: 24,
-  maxWidth: 400,
-  width: '90%',
-  maxHeight: '80vh',
-  display: 'flex',
-  flexDirection: 'column',
-}
-
-const btnPrimary: React.CSSProperties = {
-  flex: 1,
-  padding: 12,
-  background: '#5B3FE0',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 8,
-  cursor: 'pointer',
-  fontWeight: 600,
-}
-
-const btnSecondary: React.CSSProperties = {
-  flex: 1,
-  padding: 12,
-  background: '#fff',
-  color: '#5B3FE0',
-  border: '1px solid #5B3FE0',
-  borderRadius: 8,
-  cursor: 'pointer',
-  fontWeight: 600,
 }
