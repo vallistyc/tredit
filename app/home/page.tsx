@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 
 type Listing = {
   id: string
@@ -29,6 +29,7 @@ export default function HomePage() {
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState('semua')
+  const supabase = createClient()
 
   useEffect(() => {
     fetchListings()
@@ -128,9 +129,9 @@ export default function HomePage() {
       {/* Grid card listing */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
         {listings.map((listing) => (
-          <a
+          
             key={listing.id}
-            href={`/listing/${listing.id}`}
+            href={`/listing/${listings.id}`}
             className="block no-underline text-inherit border border-line rounded-xl overflow-hidden"
           >
             {/* Foto */}
@@ -158,34 +159,34 @@ export default function HomePage() {
             {/* Info badges */}
             <div className="py-[10px] px-[14px]">
               <div className="flex gap-1.5 flex-wrap mb-2">
-                {listing.location && (
+                {listings.location && (
                   <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
-                    📍 {listing.location}
+                    📍 {listings.location}
                   </span>
                 )}
                 <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
                   👋 0 Bids
                 </span>
                 <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
-                  🗓 {formatRelativeDate(listing.created_at)}
+                  🗓 {formatRelativeDate(listings.created_at)}
                 </span>
               </div>
 
-              {listing.expected_goods.length > 0 && (
+              {listings.expected_goods.length > 0 && (
                 <div className="text-[13px] mb-1.5">
                   <strong>Expected Goods</strong>
                   <ul className="list-disc pl-[18px] mt-1">
-                    {listing.expected_goods.map((item, i) => (
+                    {listings.expected_goods.map((item, i) => (
                       <li key={i}>{item}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {listing.condition_notes && (
+              {listings.condition_notes && (
                 <div className="text-[13px]">
                   <strong>Condition</strong>
-                  <p className="mt-1">{listing.condition_notes}</p>
+                  <p className="mt-1">{listings.condition_notes}</p>
                 </div>
               )}
             </div>

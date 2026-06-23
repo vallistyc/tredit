@@ -2,10 +2,11 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 
 export default function RootPage() {
   const router = useRouter()
+  const supabase = createClient()  // ← ini yang ketinggalan
 
   useEffect(() => {
     checkAuthAndRedirect()
