@@ -94,7 +94,7 @@ export default function Navbar() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'white', fontWeight: '800', fontSize: '16px', flexShrink: 0
           }}>T</div>
-          <span style={{ fontSize: '20px', fontWeight: '800', color: 'var(--primary)' }}>TREDIT</span>
+          <span style={{ fontSize: '20px', fontWeight: '800', color: 'var(--primary)' }}>TREDIT-CARBONLESS</span>
         </div>
 
         {/* Nav items */}
