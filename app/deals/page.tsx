@@ -1,288 +1,608 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import Navbar from '@/app/components/Navbar'
+import { createClient } from '@/lib/supabase/client'
 
-type BidRow = {
+const supabase = createClient()
+
+type Listing = {
+  id: string
+  owner_id: string
+  title: string
+  photo_urls: string[] | null
+  estimated_value: number
+  status: string
+}
+
+type Bid = {
   id: string
   listing_id: string
   bidder_id: string
   offered_listing_id: string
   message: string | null
   status: string
+  escrow_fee_paid: boolean
+  platform_fee_paid: boolean
   created_at: string
-  // hasil join manual
-  listing_title?: string
-  offered_listing_title?: string
-  bidder_username?: string
-  pitcher_username?: string
 }
 
-const STATUS_CLASSES: Record<string, string> = {
-  pending: 'bg-warning-bg text-warning',
-  accepted: 'bg-success-bg text-success',
-  rejected: 'bg-danger-bg text-danger',
+type Profile = {
+  id: string
+  username: string
+  full_name: string | null
 }
-const STATUS_FALLBACK = 'bg-gray-100 text-gray-700'
+
+type DealRow = {
+  bid: Bid
+  targetListing?: Listing
+  offeredListing?: Listing
+  bidder?: Profile
+}
+
+function formatRupiah(value?: number) {
+  if (!value) return 'Rp0'
+  return 'Rp' + Number(value).toLocaleString('id-ID')
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const minutes = Math.max(0, Math.floor(diff / 60000))
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (minutes < 1) return 'baru saja'
+  if (minutes < 60) return `${minutes} menit lalu`
+  if (hours < 24) return `${hours} jam lalu`
+  return `${days} hari lalu`
+}
+
+function statusLabel(status: string) {
+  if (status === 'pending') return 'Menunggu'
+  if (status === 'accepted') return 'Diterima'
+  if (status === 'rejected') return 'Ditolak'
+  if (status === 'cancelled') return 'Dibatalkan'
+  if (status === 'expired') return 'Expired'
+  if (status === 'verification_passed') return 'Lolos Verifikasi'
+  if (status === 'completed') return 'Completed'
+  if (status === 'refund_pitcher_invalid') return 'Refund: Pitcher Invalid'
+  if (status === 'refund_catcher_invalid') return 'Refund: Catcher Invalid'
+  if (status === 'refund_both_invalid') return 'Penalty: Keduanya Invalid'
+  return status
+}
+
+function statusColor(status: string) {
+  if (status === 'accepted' || status === 'verification_passed' || status === 'completed') {
+    return { bg: '#EAFBF1', text: '#166534' }
+  }
+  if (
+    status === 'rejected' ||
+    status === 'cancelled' ||
+    status === 'expired' ||
+    status.startsWith('refund_')
+  ) {
+    return { bg: '#FEF2F2', text: '#991B1B' }
+  }
+  return { bg: '#FFF8E7', text: '#92640A' }
+}
 
 export default function DealsPage() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'masuk' | 'diajukan'>('masuk')
-  const [incomingBids, setIncomingBids] = useState<BidRow[]>([])
-  const [myBids, setMyBids] = useState<BidRow[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [incoming, setIncoming] = useState<DealRow[]>([])
+  const [outgoing, setOutgoing] = useState<DealRow[]>([])
+  const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming')
   const [loading, setLoading] = useState(true)
-  const [processingId, setProcessingId] = useState<string | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [busyBidId, setBusyBidId] = useState<string | null>(null)
+  const [acceptingRow, setAcceptingRow] = useState<DealRow | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
-  useEffect(() => {
-    fetchBids()
-  }, [])
-
-  async function fetchBids() {
+  const loadDeals = useCallback(async () => {
     setLoading(true)
-    setErrorMsg('')
+    setError('')
+    setNotice('')
 
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) {
-      setLoading(false)
-      setErrorMsg('Kamu harus login dulu')
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      router.push('/login')
       return
     }
-    const userId = userData.user.id
 
-    // Tab "Masuk": bid yang masuk ke listing milik kita
-    // Caranya: ambil dulu listing_id milik kita, baru query bids yang listing_id-nya termasuk itu
-    const { data: myListings } = await supabase
+    setCurrentUserId(user.id)
+
+    const { data: myListings, error: myListingsError } = await supabase
       .from('listings')
-      .select('id, title')
-      .eq('owner_id', userId)
+      .select('id, owner_id, title, photo_urls, estimated_value, status')
+      .eq('owner_id', user.id)
 
-    const myListingIds = (myListings ?? []).map((l) => l.id)
-    const myListingTitleMap = Object.fromEntries(
-      (myListings ?? []).map((l) => [l.id, l.title])
-    )
+    if (myListingsError) {
+      setError('Gagal memuat listing milikmu: ' + myListingsError.message)
+      setLoading(false)
+      return
+    }
 
-    let incoming: BidRow[] = []
-    if (myListingIds.length > 0) {
-      const { data: incomingData, error: incomingError } = await supabase
+    const myListingIds = (myListings || []).map(item => item.id)
+
+    const incomingRequest = myListingIds.length
+      ? supabase
+          .from('bids')
+          .select('*')
+          .in('listing_id', myListingIds)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null })
+
+    const [incomingResult, outgoingResult] = await Promise.all([
+      incomingRequest,
+      supabase
         .from('bids')
         .select('*')
-        .in('listing_id', myListingIds)
-        .order('created_at', { ascending: false })
+        .eq('bidder_id', user.id)
+        .order('created_at', { ascending: false }),
+    ])
 
-      if (incomingError) {
-        setErrorMsg('Gagal memuat bid masuk: ' + incomingError.message)
-      }
-
-      if (incomingData) {
-        // ambil judul offered_listing + username bidder satu-satu (sederhana, belum dioptimasi join)
-        incoming = await Promise.all(
-          incomingData.map(async (bid) => {
-            const { data: offeredListing } = await supabase
-              .from('listings')
-              .select('title')
-              .eq('id', bid.offered_listing_id)
-              .single()
-
-            const { data: bidderProfile } = await supabase
-              .from('profiles')
-              .select('username')
-              .eq('id', bid.bidder_id)
-              .single()
-
-            return {
-              ...bid,
-              listing_title: myListingTitleMap[bid.listing_id],
-              offered_listing_title: offeredListing?.title,
-              bidder_username: bidderProfile?.username,
-            }
-          })
-        )
-      }
-    }
-    setIncomingBids(incoming)
-
-    // Tab "Diajukan": bid yang kita ajukan ke listing orang lain
-    const { data: myBidsData, error: myBidsError } = await supabase
-      .from('bids')
-      .select('*')
-      .eq('bidder_id', userId)
-      .order('created_at', { ascending: false })
-
-    if (myBidsError) {
-      setErrorMsg('Gagal memuat bid diajukan: ' + myBidsError.message)
-    }
-
-    let mine: BidRow[] = []
-    if (myBidsData) {
-      mine = await Promise.all(
-        myBidsData.map(async (bid) => {
-          const { data: targetListing } = await supabase
-            .from('listings')
-            .select('title, owner_id')
-            .eq('id', bid.listing_id)
-            .single()
-
-          let pitcherUsername: string | undefined
-          if (targetListing?.owner_id) {
-            const { data: pitcherProfile } = await supabase
-              .from('profiles')
-              .select('username')
-              .eq('id', targetListing.owner_id)
-              .single()
-            pitcherUsername = pitcherProfile?.username
-          }
-
-          return {
-            ...bid,
-            listing_title: targetListing?.title,
-            pitcher_username: pitcherUsername,
-          }
-        })
+    if (incomingResult.error || outgoingResult.error) {
+      setError(
+        incomingResult.error?.message ||
+          outgoingResult.error?.message ||
+          'Gagal memuat tawaran'
       )
-    }
-    setMyBids(mine)
-
-    setLoading(false)
-  }
-
-  async function handleAccept(bidId: string) {
-    setProcessingId(bidId)
-    setErrorMsg('')
-
-    const { data: dealId, error } = await supabase.rpc('accept_bid', {
-      bid_id_param: bidId,
-    })
-
-    setProcessingId(null)
-
-    if (error) {
-      setErrorMsg('Gagal accept bid: ' + error.message)
+      setLoading(false)
       return
     }
 
-    // Refresh list, lalu arahkan ke detail deal kalau halamannya sudah ada
-    await fetchBids()
-    if (dealId) {
-      router.push(`/deals/${dealId}`)
-    }
-  }
+    const incomingBids = (incomingResult.data || []) as Bid[]
+    const outgoingBids = (outgoingResult.data || []) as Bid[]
+    const allBids = [...incomingBids, ...outgoingBids]
 
-  async function handleReject(bidId: string) {
-    setProcessingId(bidId)
-    setErrorMsg('')
-
-    const { error } = await supabase.rpc('reject_bid', {
-      bid_id_param: bidId,
-    })
-
-    setProcessingId(null)
-
-    if (error) {
-      setErrorMsg('Gagal reject bid: ' + error.message)
-      return
-    }
-
-    await fetchBids()
-  }
-
-  function statusBadge(status: string) {
-    const classes = STATUS_CLASSES[status] ?? STATUS_FALLBACK
-    return (
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${classes}`}>
-        {status}
-      </span>
+    const listingIds = Array.from(
+      new Set(allBids.flatMap(bid => [bid.listing_id, bid.offered_listing_id]))
     )
+    const bidderIds = Array.from(new Set(allBids.map(bid => bid.bidder_id)))
+
+    const [{ data: relatedListings }, { data: profiles }] = await Promise.all([
+      listingIds.length
+        ? supabase
+            .from('listings')
+            .select('id, owner_id, title, photo_urls, estimated_value, status')
+            .in('id', listingIds)
+        : Promise.resolve({ data: [] }),
+      bidderIds.length
+        ? supabase
+            .from('profiles')
+            .select('id, username, full_name')
+            .in('id', bidderIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    const listingMap = new Map<string, Listing>()
+    ;[...(myListings || []), ...(relatedListings || [])].forEach(item => {
+      listingMap.set(item.id, item as Listing)
+    })
+
+    const profileMap = new Map<string, Profile>()
+    ;(profiles || []).forEach(item => {
+      profileMap.set(item.id, item as Profile)
+    })
+
+    const toRows = (bids: Bid[]) =>
+      bids.map(bid => ({
+        bid,
+        targetListing: listingMap.get(bid.listing_id),
+        offeredListing: listingMap.get(bid.offered_listing_id),
+        bidder: profileMap.get(bid.bidder_id),
+      }))
+
+    setIncoming(toRows(incomingBids))
+    setOutgoing(toRows(outgoingBids))
+    setLoading(false)
+  }, [router])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadDeals()
+  }, [loadDeals])
+
+  const activeRows = useMemo(
+    () => (activeTab === 'incoming' ? incoming : outgoing),
+    [activeTab, incoming, outgoing]
+  )
+
+  async function rejectBid(row: DealRow) {
+    setBusyBidId(row.bid.id)
+    setError('')
+    setNotice('')
+
+    const rpcResult = await supabase.rpc('reject_bid_v4', { p_bid_id: row.bid.id })
+
+    if (!rpcResult.error) {
+      setNotice('Tawaran ditolak. Escrow Catcher dikembalikan sesuai flow v4.')
+      setBusyBidId(null)
+      await loadDeals()
+      return
+    }
+
+    const { error: rejectError } = await supabase
+      .from('bids')
+      .update({ status: 'rejected' })
+      .eq('id', row.bid.id)
+
+    if (rejectError) {
+      setError('Gagal menolak tawaran: ' + rejectError.message)
+      setBusyBidId(null)
+      return
+    }
+
+    setNotice('Tawaran ditolak. Escrow Catcher ditandai untuk dikembalikan secara operasional.')
+    setBusyBidId(null)
+    setAcceptingRow(null)
+    await loadDeals()
+  }
+
+  async function acceptBid(row: DealRow) {
+    setBusyBidId(row.bid.id)
+    setError('')
+    setNotice('')
+
+    const rpcResult = await supabase.rpc('accept_bid_v4', { p_bid_id: row.bid.id })
+
+    if (!rpcResult.error) {
+      setNotice('Tawaran diterima. Bid lain otomatis dibatalkan dan kedua barang masuk Locked in Deal.')
+      setBusyBidId(null)
+      setAcceptingRow(null)
+      await loadDeals()
+      return
+    }
+
+    const { error: acceptError } = await supabase
+      .from('bids')
+      .update({ status: 'accepted' })
+      .eq('id', row.bid.id)
+
+    if (acceptError) {
+      setError('Gagal menerima tawaran: ' + acceptError.message)
+      setBusyBidId(null)
+      return
+    }
+
+    await supabase
+      .from('bids')
+      .update({ status: 'cancelled' })
+      .eq('listing_id', row.bid.listing_id)
+      .eq('status', 'pending')
+      .neq('id', row.bid.id)
+
+    const targetUpdate = await supabase
+      .from('listings')
+      .update({ status: 'locked_in_deal' })
+      .eq('id', row.bid.listing_id)
+
+    const offeredUpdate = await supabase
+      .from('listings')
+      .update({ status: 'locked_in_deal' })
+      .eq('id', row.bid.offered_listing_id)
+
+    if (targetUpdate.error || offeredUpdate.error) {
+      setNotice(
+        'Tawaran diterima, tapi status listing belum bisa dikunci penuh. Jalankan migration flow v4 agar Hard Lock lintas user aktif.'
+      )
+    } else {
+      setNotice('Tawaran diterima. Kedua barang masuk tahap Locked in Deal.')
+    }
+
+    setBusyBidId(null)
+    setAcceptingRow(null)
+    await loadDeals()
   }
 
   return (
-    <div className="max-w-[600px] mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Deals</h1>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <Navbar />
 
-      <div className="flex gap-2 mb-6">
-        <button
-          onClick={() => setActiveTab('masuk')}
-          className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
-            activeTab === 'masuk' ? 'bg-primary text-white' : 'bg-transparent text-primary'
-          }`}
-        >
-          Masuk
-        </button>
-        <button
-          onClick={() => setActiveTab('diajukan')}
-          className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
-            activeTab === 'diajukan' ? 'bg-primary text-white' : 'bg-transparent text-primary'
-          }`}
-        >
-          Diajukan
-        </button>
+      <main className="main-content" style={{ padding: '20px 16px 120px' }}>
+        <div style={{ maxWidth: '1080px', margin: '0 auto' }}>
+          <header style={{ marginBottom: '18px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 800 }}>Deals</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
+              Kelola tawaran masuk sebagai Pitcher dan pantau Catch It yang kamu kirim.
+            </p>
+          </header>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '8px',
+              marginBottom: '14px',
+            }}
+          >
+            <button
+              onClick={() => setActiveTab('incoming')}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '10px',
+                background: activeTab === 'incoming' ? 'var(--primary)' : 'var(--surface)',
+                color: activeTab === 'incoming' ? 'white' : 'var(--text)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Tawaran Masuk ({incoming.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('outgoing')}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '10px',
+                background: activeTab === 'outgoing' ? 'var(--primary)' : 'var(--surface)',
+                color: activeTab === 'outgoing' ? 'white' : 'var(--text)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Catch It Saya ({outgoing.length})
+            </button>
+          </div>
+
+          {notice && (
+            <div className="card" style={{ padding: '12px 14px', marginBottom: '12px', border: '1px solid #FFB800' }}>
+              <p style={{ color: '#92640A', fontSize: '13px', lineHeight: 1.5 }}>{notice}</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="card" style={{ padding: '12px 14px', marginBottom: '12px' }}>
+              <p className="error-text">{error}</p>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="card" style={{ padding: '28px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Memuat deals...
+            </div>
+          ) : activeRows.length === 0 ? (
+            <div className="card" style={{ padding: '28px', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>
+                Belum ada tawaran
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+                {activeTab === 'incoming'
+                  ? 'Tawaran ke listing milikmu akan muncul di sini.'
+                  : 'Catch It yang kamu kirim akan muncul di sini.'}
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {activeRows.map(row => {
+                const colors = statusColor(row.bid.status)
+                const canDecide =
+                  activeTab === 'incoming' &&
+                  row.bid.status === 'pending' &&
+                  row.targetListing?.owner_id === currentUserId
+
+                return (
+                  <article key={row.bid.id} className="card" style={{ padding: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginBottom: '12px' }}>
+                      <div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          {activeTab === 'incoming'
+                            ? `Dari @${row.bidder?.username || 'catcher'}`
+                            : 'Catch It terkirim'}
+                        </p>
+                        <h2 style={{ fontSize: '17px', fontWeight: 800 }}>
+                          {row.offeredListing?.title || 'Barang penukar'} to {row.targetListing?.title || 'Listing target'}
+                        </h2>
+                      </div>
+                      <span
+                        style={{
+                          height: 'fit-content',
+                          background: colors.bg,
+                          color: colors.text,
+                          borderRadius: '6px',
+                          padding: '5px 9px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {statusLabel(row.bid.status)}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                        gap: '10px',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      <ListingMiniCard label="Catcher menawarkan" listing={row.offeredListing} />
+                      <ListingMiniCard label="Pitcher listing" listing={row.targetListing} />
+                    </div>
+
+                    {row.bid.message && (
+                      <div style={{ background: 'var(--bg)', borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
+                        <p className="section-label">Pesan</p>
+                        <p style={{ fontSize: '14px', lineHeight: 1.5 }}>{row.bid.message}</p>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                        {timeAgo(row.bid.created_at)} | Escrow {row.bid.escrow_fee_paid ? 'paid' : 'unpaid'} | Platform {row.bid.platform_fee_paid ? 'paid' : 'unpaid'}
+                      </p>
+
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {row.bid.status !== 'pending' && (
+                          <button
+                            onClick={() => router.push(`/deals/${row.bid.id}`)}
+                            style={{
+                              border: '1px solid var(--border)',
+                              background: 'var(--surface)',
+                              color: 'var(--text)',
+                              borderRadius: '8px',
+                              padding: '9px 12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Detail
+                          </button>
+                        )}
+
+                        {canDecide && (
+                          <>
+                          <button
+                            onClick={() => rejectBid(row)}
+                            disabled={busyBidId === row.bid.id}
+                            style={{
+                              border: '1.5px solid var(--danger)',
+                              background: 'transparent',
+                              color: 'var(--danger)',
+                              borderRadius: '8px',
+                              padding: '9px 12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Tolak
+                          </button>
+                          <button
+                            onClick={() => setAcceptingRow(row)}
+                            disabled={busyBidId === row.bid.id}
+                            style={{
+                              border: 'none',
+                              background: 'var(--primary)',
+                              color: 'white',
+                              borderRadius: '8px',
+                              padding: '9px 12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Terima
+                          </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {acceptingRow && (
+        <AcceptPaymentModal
+          row={acceptingRow}
+          busy={busyBidId === acceptingRow.bid.id}
+          onClose={() => {
+            if (!busyBidId) setAcceptingRow(null)
+          }}
+          onConfirm={() => acceptBid(acceptingRow)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ListingMiniCard({ label, listing }: { label: string; listing?: Listing }) {
+  return (
+    <div style={{ display: 'flex', gap: '10px', background: 'var(--bg)', borderRadius: '10px', padding: '10px' }}>
+      <div style={{ width: '64px', height: '64px', borderRadius: '8px', overflow: 'hidden', background: '#F3F0FF', flexShrink: 0 }}>
+        {listing?.photo_urls && listing.photo_urls.length > 0 ? (
+          <img src={listing.photo_urls[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontSize: '12px' }}>
+            No Photo
+          </div>
+        )}
       </div>
+      <div style={{ minWidth: 0 }}>
+        <p className="section-label">{label}</p>
+        <p style={{ fontWeight: 800, fontSize: '14px', lineHeight: 1.3 }}>{listing?.title || 'Tidak bisa dimuat'}</p>
+        <p style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '13px', marginTop: '4px' }}>
+          {formatRupiah(listing?.estimated_value)}
+        </p>
+      </div>
+    </div>
+  )
+}
 
-      {loading && <p>Memuat...</p>}
-      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
+function AcceptPaymentModal({
+  row,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  row: DealRow
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={event => event.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '560px',
+          margin: '0 auto',
+          background: 'var(--surface)',
+          borderRadius: '20px 20px 0 0',
+          padding: '20px',
+        }}
+      >
+        <h2 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '6px' }}>
+          Bayar Escrow Pitcher
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+          Setelah pembayaran mock ini dikonfirmasi, tawaran lain otomatis dibatalkan dan kedua barang masuk Locked in Deal.
+        </p>
 
-      {/* TAB: Masuk */}
-      {!loading && activeTab === 'masuk' && (
-        <div>
-          {incomingBids.length === 0 && <p>Belum ada bid yang masuk.</p>}
-          {incomingBids.map((bid) => (
-            <div key={bid.id} className="border border-line rounded-xl p-4 mb-3">
-              <div className="flex justify-between mb-2">
-                <strong>{bid.listing_title}</strong>
-                {statusBadge(bid.status)}
-              </div>
-              <p className="my-1 text-sm">
-                Ditawar oleh <strong>@{bid.bidder_username}</strong> dengan{' '}
-                <strong>{bid.offered_listing_title}</strong>
-              </p>
-              {bid.message && (
-                <p className="my-1 text-[13px] text-muted">&quot;{bid.message}&quot;</p>
-              )}
-
-              {bid.status === 'pending' && (
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => handleAccept(bid.id)}
-                    disabled={processingId === bid.id}
-                    className="flex-1 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                  >
-                    {processingId === bid.id ? 'Memproses...' : 'Accept'}
-                  </button>
-                  <button
-                    onClick={() => handleReject(bid.id)}
-                    disabled={processingId === bid.id}
-                    className="flex-1 py-2 bg-white text-danger-button border border-danger-button rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+          <ListingMiniCard label="Pitcher melepas" listing={row.targetListing} />
+          <ListingMiniCard label="Catcher melepas" listing={row.offeredListing} />
         </div>
-      )}
 
-      {/* TAB: Diajukan */}
-      {!loading && activeTab === 'diajukan' && (
-        <div>
-          {myBids.length === 0 && <p>Kamu belum mengajukan barter ke manapun.</p>}
-          {myBids.map((bid) => (
-            <div key={bid.id} className="border border-line rounded-xl p-4 mb-3">
-              <div className="flex justify-between mb-2">
-                <strong>{bid.listing_title}</strong>
-                {statusBadge(bid.status)}
-              </div>
-              <p className="my-1 text-sm">
-                Diajukan ke <strong>@{bid.pitcher_username}</strong>
-              </p>
-              {bid.message && (
-                <p className="my-1 text-[13px] text-muted">&quot;{bid.message}&quot;</p>
-              )}
-            </div>
-          ))}
+        <div style={{ background: '#FFF8E7', border: '1px solid #FFB800', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ color: '#92640A', fontSize: '14px' }}>Escrow Fee Pitcher</span>
+            <strong style={{ color: '#92640A', fontSize: '14px' }}>Rp25.000</strong>
+          </div>
+          <p style={{ color: '#92640A', fontSize: '12px', lineHeight: 1.5 }}>
+            Platform Fee sudah dibayar saat listing dibuat. Escrow ini akan dikembalikan jika kedua barang valid.
+          </p>
         </div>
-      )}
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn-outline" onClick={onClose} disabled={busy} style={{ flex: 1 }}>
+            Batal
+          </button>
+          <button className="btn-primary" onClick={onConfirm} disabled={busy} style={{ flex: 2 }}>
+            {busy ? 'Memproses...' : 'Konfirmasi & Bayar Rp25.000'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

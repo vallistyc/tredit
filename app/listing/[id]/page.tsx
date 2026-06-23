@@ -1,342 +1,607 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
+import Navbar from '@/app/components/Navbar'
+
+// Penjelasan Next.js: folder [id] adalah dynamic route.
+// useParams() dipakai di client component untuk baca nilai id-nya.
 
 type Listing = {
   id: string
   title: string
+  category: string
   brand: string | null
+  condition_notes: string
   location: string | null
   expected_goods: string[]
-  condition_notes: string | null
   estimated_value: number
   photo_urls: string[]
-  category: string
+  created_at: string
   owner_id: string
   status: string
 }
 
-const ESCROW_FEE = 25000
-const PLATFORM_FEE = 10000
+type Profile = {
+  username: string
+  full_name: string | null
+  trust_score: number
+}
+
+type MyListing = {
+  id: string
+  title: string
+  photo_urls: string[]
+  estimated_value: number
+  category: string
+  status: string
+  activeOfferCount: number
+}
+
+function formatRupiah(value: number) {
+  return 'Rp' + value.toLocaleString('id-ID')
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const days = Math.floor(diff / 86400000)
+  const hours = Math.floor(diff / 3600000)
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 60) return `${minutes} menit lalu`
+  if (hours < 24) return `${hours} jam lalu`
+  return `${days} hari lalu`
+}
 
 export default function ListingDetailPage() {
+  const { id } = useParams()
   const router = useRouter()
-  const params = useParams()
-  const listingId = params.id as string
 
   const [listing, setListing] = useState<Listing | null>(null)
-  const [myListings, setMyListings] = useState<Listing[]>([])
-  const [loading, setLoading] = useState(true)
+  const [owner, setOwner] = useState<Profile | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [bidCount, setBidCount] = useState(0)
+  const [activePhoto, setActivePhoto] = useState(0)
+  const [loading, setLoading] = useState(true)
 
+  // Modal Catch It
   const [showCatchModal, setShowCatchModal] = useState(false)
-  const [selectedOfferId, setSelectedOfferId] = useState('')
+  const [myListings, setMyListings] = useState<MyListing[]>([])
+  const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
-  const [showPaymentConfirm, setShowPaymentConfirm] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [catchStep, setCatchStep] = useState<'pick' | 'confirm'>('pick')
+  const [catching, setCatching] = useState(false)
+  const [catchError, setCatchError] = useState('')
+  const [catchSuccess, setCatchSuccess] = useState(false)
 
-  useEffect(() => {
-    fetchAll()
-  }, [listingId])
-
-  async function fetchAll() {
-    setLoading(true)
-    const { data: userData } = await supabase.auth.getUser()
-    setCurrentUserId(userData.user?.id ?? null)
-
-    const { data, error } = await supabase
+  const fetchListing = useCallback(async () => {
+    const { data: listingData } = await supabase
       .from('listings')
       .select('*')
-      .eq('id', listingId)
+      .eq('id', id)
       .single()
 
-    if (!error && data) setListing(data as Listing)
+    if (!listingData) { router.push('/home'); return }
+    setListing(listingData)
+
+    const { data: ownerData } = await supabase
+      .from('profiles')
+      .select('username, full_name, trust_score')
+      .eq('id', listingData.owner_id)
+      .single()
+    setOwner(ownerData)
+
+    const { count } = await supabase
+      .from('bids')
+      .select('*', { count: 'exact', head: true })
+      .eq('listing_id', id as string)
+    setBidCount(count || 0)
+
     setLoading(false)
-  }
+  }, [id, router])
+
+  useEffect(() => {
+    async function init() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      setCurrentUserId(user.id)
+      await fetchListing()
+    }
+    init()
+  }, [fetchListing, router])
 
   async function openCatchModal() {
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) {
-      setErrorMsg('Kamu harus login dulu')
-      return
-    }
+    if (!currentUserId) return
+    setCatchError('')
+    setCatchStep('pick')
+    setSelectedListingId(null)
+    setMessage('')
 
-    const { data, error } = await supabase
+    // Ambil listing milik user sendiri yang masih bisa dipakai untuk Catch It.
+    const { data } = await supabase
       .from('listings')
-      .select('*')
-      .eq('owner_id', userData.user.id)
-      .eq('status', 'active')
-      .neq('id', listingId)
+      .select('id, title, photo_urls, estimated_value, category, status')
+      .eq('owner_id', currentUserId)
+      .in('status', ['active', 'pending_offer'])
 
-    if (!error && data) setMyListings(data as Listing[])
+    const withOfferCounts = await Promise.all(
+      (data || []).map(async item => {
+        const { count } = await supabase
+          .from('bids')
+          .select('*', { count: 'exact', head: true })
+          .eq('offered_listing_id', item.id)
+          .eq('status', 'pending')
+
+        return {
+          ...item,
+          activeOfferCount: count || 0,
+        }
+      })
+    )
+
+    setMyListings(withOfferCounts.filter(item => item.activeOfferCount < 3))
     setShowCatchModal(true)
   }
 
-  function handleProceedToPayment(e: React.FormEvent) {
-    e.preventDefault()
-    if (!selectedOfferId) {
-      setErrorMsg('Pilih salah satu barangmu untuk ditawarkan')
-      return
-    }
-    setErrorMsg('')
-    setShowCatchModal(false)
-    setShowPaymentConfirm(true)
-  }
+  async function handleCatch() {
+    if (!selectedListingId || !currentUserId || !listing) return
+    setCatching(true)
+    setCatchError('')
 
-  async function handleConfirmPayment() {
-    setSubmitting(true)
-    setErrorMsg('')
+    const { count: activeOfferCount } = await supabase
+      .from('bids')
+      .select('*', { count: 'exact', head: true })
+      .eq('offered_listing_id', selectedListingId)
+      .eq('status', 'pending')
 
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) {
-      setSubmitting(false)
-      setErrorMsg('Sesi login tidak ditemukan')
+    if ((activeOfferCount || 0) >= 3) {
+      setCatchError('Barang ini sudah memiliki 3 tawaran aktif. Pilih barang lain.')
+      setCatching(false)
       return
     }
 
-    // 1. Lock offered_listing milik penawar sekarang juga
-    const { error: lockError } = await supabase
+    const { error } = await supabase
+      .from('bids')
+      .insert({
+        listing_id: listing.id,
+        bidder_id: currentUserId,
+        offered_listing_id: selectedListingId,
+        message: message || null,
+        status: 'pending',
+        escrow_fee_paid: true,
+        platform_fee_paid: true,
+      })
+
+    if (error) {
+      setCatchError('Gagal mengajukan bid: ' + error.message)
+      setCatching(false)
+      return
+    }
+
+    await supabase
       .from('listings')
-      .update({ status: 'locked' })
-      .eq('id', selectedOfferId)
-      .eq('owner_id', userData.user.id)
+      .update({ status: 'pending_offer' })
+      .eq('id', selectedListingId)
 
-    if (lockError) {
-      setSubmitting(false)
-      setErrorMsg('Gagal mengunci barangmu: ' + lockError.message)
-      return
-    }
-
-    // 2. Insert bid
-    const { error: bidError } = await supabase.from('bids').insert({
-      listing_id: listingId,
-      bidder_id: userData.user.id,
-      offered_listing_id: selectedOfferId,
-      message,
-      status: 'pending',
-      escrow_fee_paid: true,
-      platform_fee_paid: true,
-      pitcher_escrow_fee_paid: false,
-    })
-
-    setSubmitting(false)
-
-    if (bidError) {
-      // Kalau insert bid gagal, kembalikan status offered_listing ke active
-      await supabase
-        .from('listings')
-        .update({ status: 'active' })
-        .eq('id', selectedOfferId)
-
-      setErrorMsg('Gagal mengajukan barter: ' + bidError.message)
-      return
-    }
-
-    router.push('/home')
+    setCatching(false)
+    setCatchSuccess(true)
+    setBidCount(prev => prev + 1)
   }
 
-  function formatRupiah(value: number) {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-    }).format(value)
+  function closeModal() {
+    setShowCatchModal(false)
+    setCatchSuccess(false)
+    setCatchStep('pick')
+    setSelectedListingId(null)
+    setMessage('')
+    setCatchError('')
   }
 
-  if (loading) return <p className="p-6">Memuat...</p>
-  if (!listing) return <p className="p-6">Listing tidak ditemukan</p>
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Navbar />
+        <p style={{ color: 'var(--text-muted)' }}>Memuat...</p>
+      </div>
+    )
+  }
+
+  if (!listing) return null
 
   const isOwner = currentUserId === listing.owner_id
-  const isLocked = listing.status !== 'active'
+  const selectedListing = myListings.find(l => l.id === selectedListingId)
 
   return (
-    <div className="max-w-[480px] mx-auto p-6">
-      <div
-        className="w-full h-[280px] bg-[#222] bg-cover bg-center rounded-xl mb-4"
-        style={
-          listing.photo_urls[0]
-            ? { backgroundImage: `url(${listing.photo_urls[0]})` }
-            : undefined
-        }
-      />
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <Navbar />
 
-      <h1 className="text-2xl font-bold mb-1">{listing.title}</h1>
-      {listing.brand && <p className="text-muted m-0 mb-2">{listing.brand}</p>}
+      <main className="main-content" style={{ padding: '20px 16px 100px' }}>
+        <div style={{ maxWidth: '640px', margin: '0 auto' }}>
 
-      <p className="text-sm font-semibold">
-        E.P {formatRupiah(listing.estimated_value)}
-      </p>
+          {/* Back button */}
+          <button
+            onClick={() => router.push('/home')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: '14px', marginBottom: '16px',
+              padding: '0'
+            }}
+          >
+            ← Kembali
+          </button>
 
-      {listing.location && <p>📍 {listing.location}</p>}
-
-      {listing.expected_goods.length > 0 && (
-        <div className="mt-4">
-          <strong>Expected Goods</strong>
-          <ul className="list-disc pl-5 mt-1">
-            {listing.expected_goods.map((item, i) => (
-              <li key={i}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {listing.condition_notes && (
-        <div className="mt-4">
-          <strong>Kondisi</strong>
-          <p>{listing.condition_notes}</p>
-        </div>
-      )}
-
-      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
-
-      {/* Tombol Catch It — hanya muncul kalau bukan pemilik dan listing masih active */}
-      {!isOwner && !isLocked && (
-        <button
-          onClick={openCatchModal}
-          className="mt-6 w-full py-4 bg-primary text-accent font-bold text-base border-none rounded-xl cursor-pointer"
-        >
-          Catch It
-        </button>
-      )}
-
-      {isLocked && !isOwner && (
-        <p className="mt-6 text-center text-muted">
-          Listing ini sedang dalam proses deal.
-        </p>
-      )}
-
-      {/* MODAL 1: Pilih barang yang mau ditawarkan */}
-      {showCatchModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-[400px] w-[90%] max-h-[80vh] flex flex-col">
-            <h2 className="flex-shrink-0 m-0 mb-4 text-xl font-bold">Tawarkan Barangmu</h2>
-
-            {myListings.length === 0 && (
-              <p className="flex-shrink-0">
-                Kamu belum punya listing aktif untuk ditawarkan. Tambah listing dulu.
-              </p>
-            )}
-
-            <form
-              onSubmit={handleProceedToPayment}
-              className="flex flex-col flex-1 min-h-0"
-            >
-              <div className="overflow-y-auto flex-1 min-h-0">
-                {myListings.map((item) => (
-                  <label
-                    key={item.id}
-                    className={`flex items-center gap-2 p-[10px] border rounded-lg mb-2 cursor-pointer ${
-                      selectedOfferId === item.id ? 'border-primary' : 'border-line'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="offeredListing"
-                      value={item.id}
-                      checked={selectedOfferId === item.id}
-                      onChange={(e) => setSelectedOfferId(e.target.value)}
-                    />
-                    <div>
-                      <div className="font-semibold">{item.title}</div>
-                      {item.brand && (
-                        <div className="text-xs text-muted">{item.brand}</div>
-                      )}
-                    </div>
-                  </label>
-                ))}
-
-                <textarea
-                  placeholder="Tulis pesan untuk Pitcher (opsional)"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
-                  className="w-full mt-2 p-2 rounded-lg border border-line"
+          {/* Foto */}
+          <div className="card" style={{ marginBottom: '16px', overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '300px', background: '#F3F0FF', position: 'relative' }}>
+              {listing.photo_urls && listing.photo_urls.length > 0 ? (
+                <img
+                  src={listing.photo_urls[activePhoto]}
+                  alt={listing.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
+              ) : (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', opacity: 0.3 }}>
+                  <svg width="64" height="64" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <path d="M21 15l-5-5L5 21"/>
+                  </svg>
+                </div>
+              )}
+              {/* Category badge */}
+              <span style={{
+                position: 'absolute', top: '12px', left: '12px',
+                background: 'rgba(91,63,224,0.85)', color: 'white',
+                fontSize: '12px', fontWeight: '600',
+                padding: '4px 10px', borderRadius: '6px',
+                textTransform: 'capitalize'
+              }}>{listing.category}</span>
+            </div>
 
-                {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
+            {/* Thumbnail strip */}
+            {listing.photo_urls && listing.photo_urls.length > 1 && (
+              <div style={{ display: 'flex', gap: '8px', padding: '10px 14px', overflowX: 'auto' }}>
+                {listing.photo_urls.map((url, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setActivePhoto(i)}
+                    style={{
+                      width: '56px', height: '56px', flexShrink: 0,
+                      borderRadius: '8px', overflow: 'hidden', cursor: 'pointer',
+                      border: activePhoto === i ? '2px solid var(--primary)' : '2px solid transparent'
+                    }}
+                  >
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                ))}
               </div>
-
-              <div className="flex gap-2 mt-4 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCatchModal(false)
-                    setErrorMsg('')
-                  }}
-                  className="flex-1 py-3 bg-white text-primary border border-primary rounded-lg cursor-pointer font-semibold"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={myListings.length === 0}
-                  className="flex-1 py-3 bg-primary text-white border-none rounded-lg cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-default"
-                >
-                  Lanjut
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
 
-      {/* MODAL 2: Konfirmasi pembayaran */}
-      {showPaymentConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-[400px] w-[90%] max-h-[80vh] flex flex-col">
-            <h2 className="flex-shrink-0 m-0 mb-4 text-xl font-bold">Konfirmasi Pembayaran</h2>
-
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="flex justify-between mb-2">
-                <span>Platform Fee</span>
-                <span>{formatRupiah(PLATFORM_FEE)}</span>
+          {/* Info utama */}
+          <div className="card" style={{ padding: '18px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <h1 style={{ fontSize: '20px', fontWeight: '800', lineHeight: '1.3' }}>{listing.title}</h1>
+                {listing.brand && <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>{listing.brand}</p>}
               </div>
-              <div className="flex justify-between mb-2">
-                <span>Escrow Fee</span>
-                <span>{formatRupiah(ESCROW_FEE)}</span>
-              </div>
-              <hr className="border-t border-line my-2" />
-              <div className="flex justify-between font-bold mt-2">
-                <span>Total</span>
-                <span>{formatRupiah(ESCROW_FEE + PLATFORM_FEE)}</span>
-              </div>
-
-              <div className="mt-4 p-3 bg-primary-soft rounded-lg text-sm">
-                <p className="m-0 mb-1">✅ Platform Fee tidak dapat dikembalikan.</p>
-                <p className="m-0">
-                  🔒 Escrow Fee dikembalikan jika tawaran ditolak atau barang terbukti valid saat selesai.
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>E.P</p>
+                <p style={{ fontSize: '18px', fontWeight: '800', color: 'var(--primary)' }}>
+                  {formatRupiah(listing.estimated_value)}
                 </p>
               </div>
+            </div>
 
-              <p className="text-sm text-muted mt-3">
-                Barangmu akan dikunci sementara selama proses ini berlangsung.
+            {/* Badges */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+              {listing.location && (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg)', padding: '4px 10px', borderRadius: '6px' }}>
+                  📍 {listing.location}
+                </span>
+              )}
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg)', padding: '4px 10px', borderRadius: '6px' }}>
+                🎯 {bidCount} bids
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg)', padding: '4px 10px', borderRadius: '6px' }}>
+                {timeAgo(listing.created_at)}
+              </span>
+            </div>
+
+            {/* Owner */}
+            {owner && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg)', borderRadius: '10px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '50%',
+                  background: 'var(--primary)', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '14px', flexShrink: 0
+                }}>
+                  {owner.username.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p style={{ fontSize: '14px', fontWeight: '600' }}>@{owner.username}</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Trust Score: {owner.trust_score}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Expected Goods */}
+          {listing.expected_goods && listing.expected_goods.length > 0 && (
+            <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+              <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Expected Goods
               </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {listing.expected_goods.map((g, i) => (
+                  <span key={i} style={{
+                    fontSize: '13px', background: '#FFF8E7',
+                    color: '#92640A', padding: '5px 12px',
+                    borderRadius: '8px', fontWeight: '500'
+                  }}>{g}</span>
+                ))}
+              </div>
+            </div>
+          )}
 
-              {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
+          {/* Condition */}
+          {listing.condition_notes && (
+            <div className="card" style={{ padding: '16px', marginBottom: '24px' }}>
+              <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Condition
+              </p>
+              <p style={{ fontSize: '14px', color: 'var(--text)', lineHeight: '1.6' }}>
+                {listing.condition_notes}
+              </p>
+            </div>
+          )}
+
+          {/* CTA */}
+          {!isOwner && ['active', 'pending_offer'].includes(listing.status) && (
+            <button
+              className="btn-primary"
+              onClick={openCatchModal}
+              style={{ fontSize: '16px', padding: '14px' }}
+            >
+              🎯 Catch It!
+            </button>
+          )}
+
+          {isOwner && (
+            <div style={{ background: '#EDE9FB', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <p style={{ color: 'var(--primary)', fontWeight: '600', fontSize: '14px' }}>
+                Ini listing milikmu
+              </p>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* ===== MODAL CATCH IT ===== */}
+      {showCatchModal && (
+        <div
+          onClick={closeModal}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 200, display: 'flex',
+            alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--surface)',
+              borderRadius: '20px 20px 0 0',
+              width: '100%', maxWidth: '600px',
+              margin: '0 auto',
+              maxHeight: '85vh',
+              display: 'flex', flexDirection: 'column',
+            }}
+          >
+            {/* Handle */}
+            <div style={{ padding: '12px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: '40px', height: '4px', background: 'var(--border)', borderRadius: '2px' }} />
             </div>
 
-            <div className="flex gap-2 mt-4 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPaymentConfirm(false)
-                  setShowCatchModal(true)
-                }}
-                className="flex-1 py-3 bg-white text-primary border border-primary rounded-lg cursor-pointer font-semibold"
-              >
-                Kembali
-              </button>
-              <button
-                onClick={handleConfirmPayment}
-                disabled={submitting}
-                className="flex-1 py-3 bg-primary text-white border-none rounded-lg cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-default"
-              >
-                {submitting ? 'Memproses...' : 'Konfirmasi & Bayar'}
-              </button>
-            </div>
+            {catchSuccess ? (
+              /* Success state */
+              <div style={{ padding: '24px 20px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div style={{ fontSize: '48px' }}>🎉</div>
+                <h2 style={{ fontSize: '20px', fontWeight: '800' }}>Bid Terkirim!</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+                  Tunggu Pitcher menerima atau menolak bid-mu.
+                </p>
+                <button className="btn-primary" onClick={closeModal} style={{ marginTop: '8px' }}>
+                  Oke, Tutup
+                </button>
+              </div>
+
+            ) : catchStep === 'pick' ? (
+              /* Step 1: Pilih listing */
+              <>
+                <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: '800' }}>🎯 Catch It!</h2>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Pilih barang milikmu untuk ditawarkan
+                  </p>
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
+                  {myListings.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '16px' }}>
+                        Kamu belum punya listing aktif. Buat listing dulu sebelum bisa Catch It!
+                      </p>
+                      <button
+                        className="btn-primary"
+                        onClick={() => { closeModal(); router.push('/listing/new') }}
+                      >
+                        Buat Listing Sekarang
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {myListings.map(l => (
+                        <div
+                          key={l.id}
+                          onClick={() => setSelectedListingId(l.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '12px',
+                            padding: '12px', borderRadius: '12px', cursor: 'pointer',
+                            border: selectedListingId === l.id
+                              ? '2px solid var(--primary)'
+                              : '2px solid var(--border)',
+                            background: selectedListingId === l.id ? '#EDE9FB' : 'var(--surface)',
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{
+                            width: '56px', height: '56px', borderRadius: '8px',
+                            overflow: 'hidden', flexShrink: 0, background: '#F3F0FF'
+                          }}>
+                            {l.photo_urls && l.photo_urls.length > 0 ? (
+                              <img src={l.photo_urls[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', opacity: 0.4, fontSize: '20px' }}>📦</div>
+                            )}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '14px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</p>
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{l.category}</p>
+                            <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary)' }}>{formatRupiah(l.estimated_value)}</p>
+                            {l.activeOfferCount > 0 && (
+                              <p style={{ fontSize: '12px', color: '#92640A', marginTop: '3px' }}>
+                                Ada {l.activeOfferCount} tawaran aktif. Tawaran ini bisa batal otomatis jika tawaran lain diterima.
+                              </p>
+                            )}
+                          </div>
+                          {selectedListingId === l.id && (
+                            <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <svg width="12" height="12" fill="none" stroke="white" strokeWidth="2.5" viewBox="0 0 24 24">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {myListings.length > 0 && (
+                    <div style={{ marginTop: '14px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                        Pesan (opsional)
+                      </label>
+                      <textarea
+                        className="input-field"
+                        placeholder="Ceritakan kondisi barangmu, atau negosiasi..."
+                        value={message}
+                        onChange={e => setMessage(e.target.value)}
+                        rows={2}
+                        style={{ resize: 'none' }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {myListings.length > 0 && (
+                  <div style={{ padding: '12px 20px 28px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+                    {catchError && <p className="error-text" style={{ marginBottom: '8px' }}>{catchError}</p>}
+                    <button
+                      className="btn-primary"
+                      onClick={() => {
+                        if (!selectedListingId) { setCatchError('Pilih listing dulu'); return }
+                        setCatchError('')
+                        setCatchStep('confirm')
+                      }}
+                      disabled={!selectedListingId}
+                    >
+                      Lanjut →
+                    </button>
+                  </div>
+                )}
+              </>
+
+            ) : (
+              /* Step 2: Konfirmasi pembayaran */
+              <>
+                <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: '800' }}>💳 Konfirmasi Pembayaran</h2>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Review bid sebelum dikonfirmasi
+                  </p>
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Barter summary */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ flex: 1, padding: '12px', background: 'var(--bg)', borderRadius: '10px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>KAMU TAWARKAN</p>
+                      <p style={{ fontSize: '13px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedListing?.title}</p>
+                      <p style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: '600' }}>{selectedListing ? formatRupiah(selectedListing.estimated_value) : ''}</p>
+                    </div>
+                    <div style={{ fontSize: '20px' }}>⇄</div>
+                    <div style={{ flex: 1, padding: '12px', background: 'var(--bg)', borderRadius: '10px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>KAMU INGINKAN</p>
+                      <p style={{ fontSize: '13px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
+                      <p style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: '600' }}>{formatRupiah(listing.estimated_value)}</p>
+                    </div>
+                  </div>
+
+                  {/* Fee breakdown */}
+                  {selectedListing && selectedListing.activeOfferCount > 0 && (
+                    <div style={{ background: '#FFF8E7', border: '1px solid #FFB800', borderRadius: '10px', padding: '12px' }}>
+                      <p style={{ fontSize: '13px', color: '#92640A', lineHeight: 1.5 }}>
+                        Barang yang kamu tawarkan sudah punya tawaran aktif. Sesuai Soft Lock, bid ini tetap bisa dikirim,
+                        tapi dapat dibatalkan otomatis jika tawaran lain diterima lebih dulu.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Fee breakdown */}
+                  <div style={{ background: '#FFF8E7', border: '1px solid #FFB800', borderRadius: '10px', padding: '14px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '700', color: '#92640A', marginBottom: '8px' }}>Rincian Biaya</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '13px', color: '#92640A' }}>Escrow Fee</span>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#92640A' }}>Rp25.000</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px dashed #FFB800' }}>
+                      <span style={{ fontSize: '13px', color: '#92640A' }}>Platform Fee</span>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#92640A' }}>Rp10.000</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#92640A' }}>Total</span>
+                      <span style={{ fontSize: '14px', fontWeight: '800', color: '#92640A' }}>Rp35.000</span>
+                    </div>
+                  </div>
+
+                  {catchError && <p className="error-text">{catchError}</p>}
+                </div>
+
+                <div style={{ padding: '12px 20px 28px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: '10px' }}>
+                  <button
+                    className="btn-outline"
+                    onClick={() => setCatchStep('pick')}
+                    disabled={catching}
+                    style={{ flex: 1 }}
+                  >
+                    ← Kembali
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleCatch}
+                    disabled={catching}
+                    style={{ flex: 2 }}
+                  >
+                    {catching ? 'Memproses...' : 'Konfirmasi & Bayar Rp35.000'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

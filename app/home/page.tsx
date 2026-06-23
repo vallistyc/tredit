@@ -1,198 +1,289 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Navbar from '../components/Navbar'
 import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
+import { getCurrentAppRole } from '@/lib/authRole'
 
 type Listing = {
   id: string
-  title: string
-  brand: string | null
-  location: string | null
-  expected_goods: string[]
-  condition_notes: string | null
-  estimated_value: number
-  photo_urls: string[]
-  category: string
-  created_at: string
   owner_id: string
+  title: string
+  category: string
+  brand: string | null
+  condition_notes: string | null
+  location: string | null
+  expected_goods: string[] | null
+  estimated_value: number
+  photo_urls: string[] | null
+  status: string
+  created_at: string
+  incomingBidCount: number
+  outgoingOfferCount: number
 }
 
-const CATEGORIES = [
-  { value: 'semua', label: 'Semua' },
-  { value: 'fashion', label: 'Fashion' },
-  { value: 'gadget', label: 'Gadget' },
-  { value: 'aksesoris', label: 'Aksesoris' },
-  { value: 'lainnya', label: 'Lainnya' },
-]
+const CATEGORIES = ['all', 'fashion', 'gadget', 'aksesoris', 'lainnya']
+
+function formatRupiah(value: number) {
+  return 'Rp' + Number(value).toLocaleString('id-ID')
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const minutes = Math.max(0, Math.floor(diff / 60000))
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (minutes < 1) return 'baru saja'
+  if (minutes < 60) return `${minutes} menit lalu`
+  if (hours < 24) return `${hours} jam lalu`
+  return `${days} hari lalu`
+}
 
 export default function HomePage() {
+  const router = useRouter()
   const [listings, setListings] = useState<Listing[]>([])
+  const [category, setCategory] = useState('all')
   const [loading, setLoading] = useState(true)
-  const [activeCategory, setActiveCategory] = useState('semua')
-  const supabase = createClient()
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    fetchListings()
-  }, [activeCategory])
+    async function fetchMarketplace() {
+      setLoading(true)
+      setError('')
 
-  async function fetchListings() {
-    setLoading(true)
+      const { user, role } = await getCurrentAppRole()
 
-    const { data: userData } = await supabase.auth.getUser()
-    const currentUserId = userData.user?.id
+      if (!user) {
+        router.push('/login')
+        return
+      }
 
-    // Ambil listing_id yang sudah di-bid oleh user ini (status pending)
-    let bidedListingIds: string[] = []
-    if (currentUserId) {
-      const { data: myBids } = await supabase
-        .from('bids')
-        .select('listing_id')
-        .eq('bidder_id', currentUserId)
-        .eq('status', 'pending')
+      if (role === 'verifier') {
+        router.push('/verifier')
+        return
+      }
 
-      bidedListingIds = (myBids ?? []).map((b) => b.listing_id)
+      const { data, error: listingsError } = await supabase
+        .from('listings')
+        .select('*')
+        .in('status', ['active', 'pending_offer'])
+        .neq('owner_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (listingsError) {
+        setError('Gagal memuat marketplace: ' + listingsError.message)
+        setListings([])
+        setLoading(false)
+        return
+      }
+
+      const withCounts = await Promise.all(
+        (data || []).map(async item => {
+          const [{ count: incomingBidCount }, { count: outgoingOfferCount }] =
+            await Promise.all([
+              supabase
+                .from('bids')
+                .select('*', { count: 'exact', head: true })
+                .eq('listing_id', item.id),
+              supabase
+                .from('bids')
+                .select('*', { count: 'exact', head: true })
+                .eq('offered_listing_id', item.id)
+                .eq('status', 'pending'),
+            ])
+
+          return {
+            ...item,
+            incomingBidCount: incomingBidCount || 0,
+            outgoingOfferCount: outgoingOfferCount || 0,
+          } as Listing
+        })
+      )
+
+      setListings(withCounts)
+      setLoading(false)
     }
 
-    // Query dasar: hanya listing yang masih aktif
-    let query = supabase
-      .from('listings')
-      .select('*')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
+    fetchMarketplace()
+  }, [router])
 
-    // Sembunyikan listing milik sendiri
-    if (currentUserId) {
-      query = query.neq('owner_id', currentUserId)
-    }
-
-    // Sembunyikan listing yang sudah di-bid oleh user ini
-    if (bidedListingIds.length > 0) {
-      query = query.not('id', 'in', `(${bidedListingIds.join(',')})`)
-    }
-
-    // Filter kategori
-    if (activeCategory !== 'semua') {
-      query = query.eq('category', activeCategory)
-    }
-
-    const { data, error } = await query
-
-    if (!error && data) {
-      setListings(data as Listing[])
-    }
-
-    setLoading(false)
-  }
-
-  function formatRupiah(value: number) {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-    }).format(value)
-  }
-
-  function formatRelativeDate(isoDate: string) {
-    const diffMs = Date.now() - new Date(isoDate).getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    if (diffDays === 0) return 'Hari ini'
-    if (diffDays === 1) return '1 hari lalu'
-    return `${diffDays} hari lalu`
-  }
+  const filteredListings = useMemo(() => {
+    if (category === 'all') return listings
+    return listings.filter(item => item.category === category)
+  }, [category, listings])
 
   return (
-    <div className="max-w-[960px] mx-auto p-6">
-      <h1 className="text-2xl text-center font-medium mb-5 text-[#4b00dc]">Catch your Goods!</h1>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <Navbar />
 
-      {/* Tombol filter kategori */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.value}
-            onClick={() => setActiveCategory(cat.value)}
-            className={`px-4 py-2 rounded-full border border-primary cursor-pointer ${
-              activeCategory === cat.value ? 'bg-primary border-3 font-semibold text-[#4b00dc]' : 'bg-transparent text-primary'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
+      <main className="main-content" style={{ padding: '20px 16px 110px' }}>
+        <div style={{ maxWidth: '1080px', margin: '0 auto' }}>
+          <header style={{ marginBottom: '18px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 800 }}>Marketplace</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
+              Cari barang yang cocok, lalu Catch It dengan listing milikmu.
+            </p>
+          </header>
 
-      {loading && <p>Memuat listing...</p>}
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '8px' }}>
+            {CATEGORIES.map(item => (
+              <button
+                key={item}
+                onClick={() => setCategory(item)}
+                style={{
+                  border: '1px solid',
+                  borderColor: category === item ? 'var(--primary)' : 'var(--border)',
+                  background: category === item ? 'var(--primary)' : 'var(--surface)',
+                  color: category === item ? 'white' : 'var(--text)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textTransform: item === 'all' ? 'none' : 'capitalize',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {item === 'all' ? 'Semua' : item}
+              </button>
+            ))}
+          </div>
 
-      {!loading && listings.length === 0 && (
-        <p>Belum ada listing tersedia di kategori ini.</p>
-      )}
-
-      {/* Grid card listing */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-        {listings.map((listing) => (
-          
-            key={listing.id}
-            href={`/listing/${listings.id}`}
-            className="block no-underline text-inherit border border-line rounded-xl overflow-hidden"
-          >
-            {/* Foto */}
+          {loading ? (
+            <div className="card" style={{ padding: '28px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Memuat listing...
+            </div>
+          ) : error ? (
+            <div className="card" style={{ padding: '18px' }}>
+              <p className="error-text">{error}</p>
+            </div>
+          ) : filteredListings.length === 0 ? (
+            <div className="card" style={{ padding: '28px', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Belum ada listing tersedia</h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+                Listing milik akun lain yang aktif akan muncul di sini.
+              </p>
+            </div>
+          ) : (
             <div
-              className="w-full h-[180px] bg-black bg-cover bg-center"
-              style={
-                listing.photo_urls[0]
-                  ? { backgroundImage: `url(${listing.photo_urls[0]})` }
-                  : undefined
-              }
-            />
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '16px',
+              }}
+            >
+              {filteredListings.map(item => {
+                const hasActiveOffer = item.status === 'pending_offer' || item.outgoingOfferCount > 0
 
-            {/* Judul + harga */}
-            <div className="bg-primary-card px-[14px] py-3">
-              <div className="flex justify-between">
-                <h3 className="m-0 text-lg font-semibold">{listing.title}</h3>
-                <span className="text-[13px] font-semibold text-right">
-                  E.P
-                  <br />
-                  {formatRupiah(listing.estimated_value)}
-                </span>
-              </div>
+                return (
+                  <article
+                    key={item.id}
+                    className="card"
+                    onClick={() => router.push(`/listing/${item.id}`)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div style={{ height: '190px', background: '#F3F0FF', position: 'relative' }}>
+                      {item.photo_urls && item.photo_urls.length > 0 ? (
+                        <img
+                          src={item.photo_urls[0]}
+                          alt={item.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                          No Photo
+                        </div>
+                      )}
+
+                      {hasActiveOffer && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            left: '10px',
+                            top: '10px',
+                            background: '#FFF8E7',
+                            color: '#92640A',
+                            border: '1px solid #FFB800',
+                            borderRadius: '6px',
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          Ada tawaran tukar aktif
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ padding: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <h2 style={{ fontSize: '16px', fontWeight: 800, lineHeight: 1.3 }}>{item.title}</h2>
+                          {item.brand && (
+                            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '2px' }}>
+                              {item.brand}
+                            </p>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>E.P</p>
+                          <p style={{ color: 'var(--primary)', fontSize: '14px', fontWeight: 800 }}>
+                            {formatRupiah(item.estimated_value)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                        {item.location && (
+                          <span className="badge-muted">{item.location}</span>
+                        )}
+                        <span className="badge-muted">{item.incomingBidCount} bids</span>
+                        <span className="badge-muted">{timeAgo(item.created_at)}</span>
+                      </div>
+
+                      {item.expected_goods && item.expected_goods.length > 0 && (
+                        <div style={{ marginBottom: '12px' }}>
+                          <p className="section-label">Expected Goods</p>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {item.expected_goods.slice(0, 3).map(good => (
+                              <span key={good} className="badge-amber">
+                                {good}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {item.condition_notes && (
+                        <div>
+                          <p className="section-label">Condition</p>
+                          <p
+                            style={{
+                              color: 'var(--text)',
+                              fontSize: '13px',
+                              lineHeight: 1.5,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {item.condition_notes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
             </div>
-
-            {/* Info badges */}
-            <div className="py-[10px] px-[14px]">
-              <div className="flex gap-1.5 flex-wrap mb-2">
-                {listings.location && (
-                  <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
-                    📍 {listings.location}
-                  </span>
-                )}
-                <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
-                  👋 0 Bids
-                </span>
-                <span className="text-xs bg-primary-soft px-2 py-1 rounded-lg">
-                  🗓 {formatRelativeDate(listings.created_at)}
-                </span>
-              </div>
-
-              {listings.expected_goods.length > 0 && (
-                <div className="text-[13px] mb-1.5">
-                  <strong>Expected Goods</strong>
-                  <ul className="list-disc pl-[18px] mt-1">
-                    {listings.expected_goods.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {listings.condition_notes && (
-                <div className="text-[13px]">
-                  <strong>Condition</strong>
-                  <p className="mt-1">{listings.condition_notes}</p>
-                </div>
-              )}
-            </div>
-          </a>
-        ))}
-      </div>
+          )}
+        </div>
+      </main>
     </div>
   )
 }

@@ -1,0 +1,238 @@
+[browser] Received `true` for a non-boolean attribute `clas`.
+
+If you want to write it to the DOM, pass a string instead: clas="true" or clas={value.toString()}. 
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: margint is not defined
+    at Navbar (app\components\Navbar.tsx:171:9)
+  169 |         display: 'flex', flexDirection: 'column',
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+> 171 |         margint
+      |         ^
+  172 |       }} className="mobile-nav">
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}> {
+  digest: '1420653331'
+}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: margi is not defined
+    at Navbar (app\components\Navbar.tsx:171:9)
+  169 |         display: 'flex', flexDirection: 'column',
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+> 171 |         margi
+      |         ^
+  172 |       }} className="mobile-nav">
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}> {
+  digest: '327132233'
+}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: margin is not defined
+    at Navbar (app\components\Navbar.tsx:171:9)
+  169 |         display: 'flex', flexDirection: 'column',
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+> 171 |         margin
+      |         ^
+  172 |       }} className="mobile-nav">
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}> {
+  digest: '2252134983'
+}
+[browser] Uncaught ReferenceError: margin is not defined
+    at Navbar (app/components/Navbar.tsx:171:9)
+    at HomePage (app/home/page.tsx:115:7)
+  169 |         display: 'flex', flexDirection: 'column',
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+> 171 |         margin
+      |         ^
+  172 |       }} className="mobile-nav">
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+⨯ ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  [90m170 |[0m         zIndex: [35m100[0m, paddingBottom: [32m'env(safe-area-inset-bottom)'[0m,
+  [90m171 |[0m         margiTop: 
+[31m[1m>[0m [90m172 |[0m       }} className=[32m"mobile-nav"[0m>
+  [90m    |[0m       [31m[1m^[0m
+  [90m173 |[0m         {[90m/* Nav items row */[0m}
+  [90m174 |[0m         <div style={{ display: [32m'flex'[0m, alignItems: [32m'center'[0m }}>
+  [90m175 |[0m           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/home/page.tsx [Client Component Browser]
+    ./app/home/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/home/page.tsx [Client Component SSR]
+    ./app/home/page.tsx [Server Component]
+
+
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Server Component] 
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Server Component] 
+[browser] Uncaught Error: ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./app/components/Navbar.tsx:172:7)
+    at <unknown> (Error: (./app/components/Navbar.tsx:172:7)
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Server Component] 
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/home/page.tsx [Client Component Browser]
+    ./app/home/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/home/page.tsx [Client Component SSR]
+    ./app/home/page.tsx [Server Component] 
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/[id]/page.tsx [Client Component Browser]
+    ./app/listing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/[id]/page.tsx [Client Component SSR]
+    ./app/listing/[id]/page.tsx [Server Component] 
+[browser] ./app/components/Navbar.tsx:172:7
+Expected '</', got '}'
+  170 |         zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)',
+  171 |         margiTop: 
+> 172 |       }} className="mobile-nav">
+      |       ^
+  173 |         {/* Nav items row */}
+  174 |         <div style={{ display: 'flex', alignItems: 'center' }}>
+  175 |           {navItems.map(item => (
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/components/Navbar.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Client Component Browser]
+    ./app/listing/new/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/components/Navbar.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Client Component SSR]
+    ./app/listing/new/page.tsx [Server Component] 
+
+thread 'tokio-runtime-worker' (40768) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\aggregation_update.rs:1864:17:
+inner_of_upper_lost_followers is not able to remove followers TaskId 322 (TaskId { id: 322 } Environment::new) from TaskId 317 (TaskId { id: 317 } Project::client_compile_time_info) as they don't exist as upper or follower edges
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'tokio-runtime-worker' (33104) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\aggregation_update.rs:1864:17:
+inner_of_upper_lost_followers is not able to remove followers TaskId 115 (TaskId { id: 115 } PagesProject::routes), TaskId 141 (TaskId { id: 141 } PagesProject::error_endpoint), TaskId 138 (TaskId { id: 138 } PagesProject::app_endpoint), TaskId 135 (TaskId { id: 135 } PagesProject::document_endpoint) from TaskId 20 (TaskId { id: 20 } Project::entrypoints_with_app_route_filter) as they don't exist as upper or follower edges

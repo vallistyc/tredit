@@ -1,33 +1,19 @@
-'use client'
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-
-export default function RootPage() {
-  const router = useRouter()
-  const supabase = createClient()  // ← ini yang ketinggalan
-
-  useEffect(() => {
-    checkAuthAndRedirect()
-  }, [])
-
-  async function checkAuthAndRedirect() {
-    const { data } = await supabase.auth.getSession()
-
-    if (data.session) {
-      // Sudah pernah login -> langsung ke /home
-      router.push('/home')
-    } else {
-      // Belum login -> ke /signup
-      router.push('/signup')
-    }
-  }
-
-  // Tampilan sementara selagi proses cek auth berjalan
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <p>Memuat...</p>
-    </div>
+export default async function RootPage() {
+  const cookieStore = await cookies()
+  const allCookies = cookieStore.getAll()
+  
+  // Cek apakah ada Supabase session cookie
+  const hasSession = allCookies.some(c => 
+    c.name.includes('sb-') && c.name.includes('-auth-token')
   )
+  
+  if (hasSession) {
+    redirect('/home')
+  } else {
+    redirect('/signup')
+  }
 }

@@ -2,124 +2,214 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import Link from "next/link";
+import { createClient } from '@/lib/supabase/client'
+
+const supabase = createClient()
 
 export default function SignupPage() {
   const router = useRouter()
-  const [fullName, setFullName] = useState('')
-  const [username, setUsername] = useState('')
-  const [whatsappNumber, setWhatsappNumber] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    full_name: '',
+    username: '',
+    whatsapp_number: '',
+    email: '',
+    password: '',
+  })
 
-  async function handleSignup(e: React.FormEvent) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
+    setError('')
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setErrorMsg('')
+    setError('')
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          username: username,
-          whatsapp_number: whatsappNumber,
-        },
-      },
-    })
-
-    setLoading(false)
-
-    if (error) {
-      setErrorMsg(error.message)
+    // Validasi username: huruf kecil, angka, underscore saja
+    if (!/^[a-z0-9_]+$/.test(form.username)) {
+      setError('Username hanya boleh huruf kecil, angka, dan underscore (_)')
+      setLoading(false)
       return
     }
 
-    router.push('/login')
+    // Cek username sudah dipakai belum
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', form.username)
+      .single()
+
+    if (existing) {
+      setError('Username sudah dipakai, coba yang lain')
+      setLoading(false)
+      return
+    }
+
+    // Daftar ke Supabase Auth
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: {
+          username: form.username,
+          full_name: form.full_name,
+          whatsapp_number: form.whatsapp_number,
+        }
+      }
+    })
+
+    if (signUpError) {
+      setError(signUpError.message)
+      setLoading(false)
+      return
+    }
+
+    router.push('/home')
   }
 
   return (
-    <div className="max-w-[400px] mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Daftar TREDIT</h1>
-
-      <form onSubmit={handleSignup}>
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Nama Lengkap</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      background: 'var(--bg)'
+    }}>
+      <div style={{ width: '100%', maxWidth: '420px' }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '8px'
+          }}>
+            <div style={{
+              width: '36px', height: '36px',
+              background: 'var(--primary)',
+              borderRadius: '10px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'white', fontWeight: '800', fontSize: '18px'
+            }}>T</div>
+            <span style={{ fontSize: '26px', fontWeight: '800', color: 'var(--primary)' }}>
+              TREDIT
+            </span>
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+            Barter branded goods, tanpa ribet
+          </p>
         </div>
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Username</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
+        {/* Card */}
+        <div className="card" style={{ padding: '28px' }}>
+          <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '20px' }}>
+            Buat Akun
+          </h1>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Nama Lengkap
+              </label>
+              <input
+                className="input-field"
+                name="full_name"
+                type="text"
+                placeholder="John Doe"
+                value={form.full_name}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Username
+              </label>
+              <input
+                className="input-field"
+                name="username"
+                type="text"
+                placeholder="johndoe123"
+                value={form.username}
+                onChange={handleChange}
+                required
+              />
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Huruf kecil, angka, underscore saja
+              </p>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Nomor WhatsApp
+              </label>
+              <input
+                className="input-field"
+                name="whatsapp_number"
+                type="tel"
+                placeholder="08123456789"
+                value={form.whatsapp_number}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Email
+              </label>
+              <input
+                className="input-field"
+                name="email"
+                type="email"
+                placeholder="john@email.com"
+                value={form.email}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                Password
+              </label>
+              <input
+                className="input-field"
+                name="password"
+                type="password"
+                placeholder="Minimal 6 karakter"
+                value={form.password}
+                onChange={handleChange}
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error && <p className="error-text">{error}</p>}
+
+            <button
+              className="btn-primary"
+              type="submit"
+              disabled={loading}
+              style={{ marginTop: '4px' }}
+            >
+              {loading ? 'Mendaftar...' : 'Daftar Sekarang'}
+            </button>
+          </form>
+
+          <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '14px', color: 'var(--text-muted)' }}>
+            Sudah punya akun?{' '}
+            <a href="/login" style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none' }}>
+              Login
+            </a>
+          </p>
         </div>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Nomor WhatsApp</label>
-          <input
-            type="tel"
-            value={whatsappNumber}
-            onChange={(e) => setWhatsappNumber(e.target.value)}
-            placeholder="08123456789"
-            required
-            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            className="w-full border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
-        {errorMsg && <p className="text-red-600 text-sm mb-4">{errorMsg}</p>}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="mb-2 mt-5 w-full bg-[#4b00dc] text-amber-500 font-semibold py-3 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
-        >
-          {loading ? 'Mendaftar...' : 'Daftar'}
-        </button>
-        <button className='w-full border-2 border-[#4b00dc] text-[#4b00dc] font-semibold py-3 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default'>
-          <Link
-          href="/login">
-            Log In
-          </Link>
-        </button>
-      </form>
+      </div>
     </div>
   )
 }

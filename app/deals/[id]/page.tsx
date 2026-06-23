@@ -1,255 +1,266 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Navbar from '@/app/components/Navbar'
+import { createClient } from '@/lib/supabase/client'
 
-type Deal = {
+const supabase = createClient()
+
+type Listing = {
   id: string
-  bid_id: string
-  side_a_listing_id: string
-  side_a_owner_id: string
-  side_a_recipient_id: string
-  side_a_shipped: boolean
-  side_a_shipped_at: string | null
-  side_a_received: boolean
-  side_a_received_at: string | null
-  side_b_listing_id: string
-  side_b_owner_id: string
-  side_b_recipient_id: string
-  side_b_shipped: boolean
-  side_b_shipped_at: string | null
-  side_b_received: boolean
-  side_b_received_at: string | null
+  owner_id: string
+  title: string
+  category: string
+  brand: string | null
+  condition_notes: string | null
+  location: string | null
+  photo_urls: string[] | null
+  estimated_value: number
   status: string
+}
+
+type Bid = {
+  id: string
+  listing_id: string
+  bidder_id: string
+  offered_listing_id: string
+  message: string | null
+  status: string
+  escrow_fee_paid: boolean
+  platform_fee_paid: boolean
   created_at: string
 }
 
-type ListingMini = {
-  id: string
-  title: string
-  photo_urls: string[]
-}
-
-type ProfileMini = {
+type Profile = {
   id: string
   username: string
+  full_name: string | null
 }
 
-// Tahapan global deal, dihitung dari kombinasi shipped/received kedua sisi.
-// Dipakai buat label stepper, BUKAN dari kolom deals.status langsung,
-// supaya selalu akurat meskipun kolom status belum sempat di-update Verifikator.
-function computeStage(deal: Deal): 'locked' | 'shipping' | 'verifying' | 'verified' | 'completed' {
-  const bothShipped = deal.side_a_shipped && deal.side_b_shipped
-  const bothReceived = deal.side_a_received && deal.side_b_received
-
-  if (!deal.side_a_shipped && !deal.side_b_shipped) return 'locked'
-  if (!bothShipped || !bothReceived) return 'shipping'
-  if (deal.status === 'verified' || deal.status === 'completed') return deal.status as 'verified' | 'completed'
-  return 'verifying'
+function formatRupiah(value?: number) {
+  if (!value) return 'Rp0'
+  return 'Rp' + Number(value).toLocaleString('id-ID')
 }
 
-const STAGES: { key: string; label: string }[] = [
-  { key: 'locked', label: 'Locked' },
-  { key: 'shipping', label: 'Shipping' },
-  { key: 'verifying', label: 'Verifying' },
-  { key: 'verified', label: 'Verified' },
-  { key: 'completed', label: 'Completed' },
-]
+function statusLabel(status: string) {
+  if (status === 'accepted') return 'Locked in Deal'
+  if (status === 'verification_passed') return 'Lolos Verifikasi'
+  if (status === 'completed') return 'Completed'
+  if (status === 'refund_pitcher_invalid') return 'Refund: Barang Pitcher Invalid'
+  if (status === 'refund_catcher_invalid') return 'Refund: Barang Catcher Invalid'
+  if (status === 'refund_both_invalid') return 'Penalty: Keduanya Invalid'
+  return status
+}
+
+function refundCopy(status: string) {
+  if (status === 'refund_pitcher_invalid') {
+    return 'Escrow Pitcher dialihkan ke Catcher. Escrow Catcher dikembalikan.'
+  }
+  if (status === 'refund_catcher_invalid') {
+    return 'Escrow Catcher dialihkan ke Pitcher. Escrow Pitcher dikembalikan.'
+  }
+  if (status === 'refund_both_invalid') {
+    return 'Kedua escrow disita TREDIT sebagai denda. Platform Fee tetap non-refundable.'
+  }
+  if (status === 'completed') {
+    return 'Barang sudah ditukar ke pemilik baru. Escrow kedua pihak dikembalikan.'
+  }
+  if (status === 'verification_passed') {
+    return 'Kedua barang valid. Verifier dapat menyelesaikan distribusi final.'
+  }
+  return 'Kedua barang sedang Hard Lock dan menunggu proses kirim ke verifier.'
+}
 
 export default function DealDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const dealId = params.id as string
-
-  const [deal, setDeal] = useState<Deal | null>(null)
-  const [sideAListing, setSideAListing] = useState<ListingMini | null>(null)
-  const [sideBListing, setSideBListing] = useState<ListingMini | null>(null)
-  const [sideAOwner, setSideAOwner] = useState<ProfileMini | null>(null)
-  const [sideBOwner, setSideBOwner] = useState<ProfileMini | null>(null)
+  const [bid, setBid] = useState<Bid | null>(null)
+  const [pitcherListing, setPitcherListing] = useState<Listing | null>(null)
+  const [catcherListing, setCatcherListing] = useState<Listing | null>(null)
+  const [pitcher, setPitcher] = useState<Profile | null>(null)
+  const [catcher, setCatcher] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    fetchDeal()
-  }, [dealId])
-
-  async function fetchDeal() {
+  const loadDeal = useCallback(async () => {
     setLoading(true)
-    setErrorMsg('')
+    setError('')
 
-    const { data: dealData, error: dealError } = await supabase
-      .from('deals')
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    const { data: bidData, error: bidError } = await supabase
+      .from('bids')
       .select('*')
       .eq('id', dealId)
       .single()
 
-    if (dealError || !dealData) {
-      setErrorMsg('Deal tidak ditemukan atau kamu tidak punya akses')
+    if (bidError || !bidData) {
+      setError('Deal tidak bisa dimuat: ' + (bidError?.message || 'data kosong'))
       setLoading(false)
       return
     }
 
-    setDeal(dealData as Deal)
+    const typedBid = bidData as Bid
+    const { data: listingsData, error: listingsError } = await supabase
+      .from('listings')
+      .select('id, owner_id, title, category, brand, condition_notes, location, photo_urls, estimated_value, status')
+      .in('id', [typedBid.listing_id, typedBid.offered_listing_id])
 
-    const [
-      { data: listingA },
-      { data: listingB },
-      { data: ownerA },
-      { data: ownerB },
-    ] = await Promise.all([
-      supabase.from('listings').select('id, title, photo_urls').eq('id', dealData.side_a_listing_id).single(),
-      supabase.from('listings').select('id, title, photo_urls').eq('id', dealData.side_b_listing_id).single(),
-      supabase.from('profiles').select('id, username').eq('id', dealData.side_a_owner_id).single(),
-      supabase.from('profiles').select('id, username').eq('id', dealData.side_b_owner_id).single(),
-    ])
+    if (listingsError) {
+      setError('Listing deal tidak bisa dimuat: ' + listingsError.message)
+      setLoading(false)
+      return
+    }
 
-    setSideAListing(listingA as ListingMini)
-    setSideBListing(listingB as ListingMini)
-    setSideAOwner(ownerA as ProfileMini)
-    setSideBOwner(ownerB as ProfileMini)
+    const listings = (listingsData || []) as Listing[]
+    const target = listings.find(item => item.id === typedBid.listing_id) || null
+    const offered = listings.find(item => item.id === typedBid.offered_listing_id) || null
+    const profileIds = Array.from(new Set([target?.owner_id, typedBid.bidder_id].filter(Boolean))) as string[]
 
+    const { data: profilesData } = profileIds.length
+      ? await supabase
+          .from('profiles')
+          .select('id, username, full_name')
+          .in('id', profileIds)
+      : { data: [] }
+
+    const profiles = (profilesData || []) as Profile[]
+    setBid(typedBid)
+    setPitcherListing(target)
+    setCatcherListing(offered)
+    setPitcher(profiles.find(item => item.id === target?.owner_id) || null)
+    setCatcher(profiles.find(item => item.id === typedBid.bidder_id) || null)
     setLoading(false)
-  }
+  }, [dealId, router])
 
-  function formatDate(iso: string | null) {
-    if (!iso) return null
-    return new Date(iso).toLocaleString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadDeal()
+  }, [loadDeal])
 
-  if (loading) return <p className="p-6">Memuat...</p>
-  if (errorMsg) return <p className="p-6 text-red-600">{errorMsg}</p>
-  if (!deal) return null
-
-  const currentStage = computeStage(deal)
-  const currentStageIndex = STAGES.findIndex((s) => s.key === currentStage)
+  const steps = useMemo(() => {
+    const status = bid?.status || ''
+    return [
+      { label: 'Accepted Deal', done: true },
+      { label: 'Kirim ke Verifier', done: ['accepted', 'verification_passed', 'completed'].includes(status) || status.startsWith('refund_') },
+      { label: 'Verifikasi', done: ['verification_passed', 'completed'].includes(status) || status.startsWith('refund_') },
+      { label: 'Tukar & Selesai', done: status === 'completed' },
+    ]
+  }, [bid])
 
   return (
-    <div className="max-w-[600px] mx-auto p-6">
-      <h1 className="text-2xl font-bold">Deal Detail</h1>
-      <p className="text-muted text-[13px]">Dibuat {formatDate(deal.created_at)}</p>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <Navbar />
 
-      {/* STEPPER */}
-      <div className="flex items-center my-6">
-        {STAGES.map((stage, i) => {
-          const isDone = i < currentStageIndex
-          const isCurrent = i === currentStageIndex
-          return (
-            <div
-              key={stage.key}
-              className={`flex items-center ${i < STAGES.length - 1 ? 'flex-1' : 'flex-none'}`}
-            >
-              <div className="flex flex-col items-center">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                    isDone || isCurrent ? 'bg-primary text-white' : 'bg-line-light text-gray-400'
-                  }`}
-                >
-                  {isDone ? '✓' : i + 1}
-                </div>
-                <span
-                  className={`text-[11px] mt-1 text-center ${
-                    isCurrent ? 'text-primary font-bold' : 'text-gray-400 font-normal'
-                  }`}
-                >
-                  {stage.label}
-                </span>
-              </div>
-              {i < STAGES.length - 1 && (
-                <div className={`flex-1 h-0.5 mb-4 ${isDone ? 'bg-primary' : 'bg-line-light'}`} />
-              )}
+      <main className="main-content" style={{ padding: '20px 16px 120px' }}>
+        <div style={{ maxWidth: '960px', margin: '0 auto' }}>
+          <button
+            onClick={() => router.push('/deals')}
+            style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '16px', padding: 0 }}
+          >
+            Kembali ke Deals
+          </button>
+
+          {loading ? (
+            <div className="card" style={{ padding: '28px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Memuat detail deal...
             </div>
-          )
-        })}
-      </div>
+          ) : error || !bid ? (
+            <div className="card" style={{ padding: '18px' }}>
+              <p className="error-text">{error || 'Deal tidak ditemukan'}</p>
+            </div>
+          ) : (
+            <>
+              <section className="card" style={{ padding: '18px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                  <div>
+                    <p className="section-label">Detail Accepted Deal</p>
+                    <h1 style={{ fontSize: '22px', fontWeight: 800 }}>
+                      {catcherListing?.title || 'Barang Catcher'} to {pitcherListing?.title || 'Barang Pitcher'}
+                    </h1>
+                  </div>
+                  <span style={{ height: 'fit-content', background: '#EDE9FB', color: 'var(--primary)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', fontWeight: 800 }}>
+                    {statusLabel(bid.status)}
+                  </span>
+                </div>
 
-      <p className="text-[13px] text-muted text-center mb-6">
-        Progress pengiriman diperbarui oleh Verifikator. Halaman ini hanya menampilkan status terkini.
-      </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                  {steps.map(step => (
+                    <div key={step.label} style={{ background: step.done ? '#EAFBF1' : 'var(--bg)', borderRadius: '8px', padding: '10px' }}>
+                      <p style={{ color: step.done ? '#166534' : 'var(--text-muted)', fontWeight: 800, fontSize: '13px' }}>
+                        {step.done ? 'Done' : 'Pending'}
+                      </p>
+                      <p style={{ fontSize: '13px', marginTop: '2px' }}>{step.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-      {/* SISI A */}
-      <SideCard
-        title={`Barang dari @${sideAOwner?.username ?? '...'}`}
-        listing={sideAListing}
-        shipped={deal.side_a_shipped}
-        shippedAt={formatDate(deal.side_a_shipped_at)}
-        received={deal.side_a_received}
-        receivedAt={formatDate(deal.side_a_received_at)}
-        recipientUsername={sideBOwner?.username}
-      />
+              <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                <DealListingCard role="Pitcher" listing={pitcherListing} profile={pitcher} />
+                <DealListingCard role="Catcher" listing={catcherListing} profile={catcher} />
+              </section>
 
-      {/* SISI B */}
-      <SideCard
-        title={`Barang dari @${sideBOwner?.username ?? '...'}`}
-        listing={sideBListing}
-        shipped={deal.side_b_shipped}
-        shippedAt={formatDate(deal.side_b_shipped_at)}
-        received={deal.side_b_received}
-        receivedAt={formatDate(deal.side_b_received_at)}
-        recipientUsername={sideAOwner?.username}
-      />
-    </div>
-  )
-}
-
-function SideCard({
-  title,
-  listing,
-  shipped,
-  shippedAt,
-  received,
-  receivedAt,
-  recipientUsername,
-}: {
-  title: string
-  listing: ListingMini | null
-  shipped: boolean
-  shippedAt: string | null
-  received: boolean
-  receivedAt: string | null
-  recipientUsername?: string
-}) {
-  return (
-    <div className="border border-line rounded-xl p-4 mb-4 flex gap-3">
-      <div
-        className="w-16 h-16 rounded-lg flex-shrink-0 bg-black bg-cover bg-center"
-        style={
-          listing?.photo_urls?.[0]
-            ? { backgroundImage: `url(${listing.photo_urls[0]})` }
-            : undefined
-        }
-      />
-      <div className="flex-1">
-        <p className="m-0 text-[13px] text-muted">{title}</p>
-        <strong>{listing?.title ?? '...'}</strong>
-        <p className="mt-1 mb-0 text-[13px]">Tujuan: @{recipientUsername ?? '...'}</p>
-
-        <div className="mt-2 flex flex-col gap-1">
-          <StatusLine label="Dikirim" done={shipped} doneAt={shippedAt} />
-          <StatusLine label="Diterima" done={received} doneAt={receivedAt} />
+              <section className="card" style={{ padding: '16px' }}>
+                <p className="section-label">Escrow & Refund Handling</p>
+                <p style={{ fontSize: '14px', lineHeight: 1.6, marginBottom: '12px' }}>{refundCopy(bid.status)}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                  <FeeBox label="Escrow Pitcher" value="Rp25.000" />
+                  <FeeBox label="Escrow Catcher" value="Rp25.000" />
+                  <FeeBox label="Platform Fee" value="Non-refundable" />
+                </div>
+                {bid.message && (
+                  <div style={{ background: 'var(--bg)', borderRadius: '8px', padding: '10px', marginTop: '12px' }}>
+                    <p className="section-label">Pesan Catcher</p>
+                    <p style={{ fontSize: '14px', lineHeight: 1.5 }}>{bid.message}</p>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }
 
-function StatusLine({ label, done, doneAt }: { label: string; done: boolean; doneAt: string | null }) {
+function DealListingCard({ role, listing, profile }: { role: string; listing: Listing | null; profile: Profile | null }) {
   return (
-    <div className="flex items-center gap-1.5 text-[13px]">
-      <span
-        className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] ${
-          done ? 'bg-success-bg text-success' : 'bg-line-light text-gray-400'
-        }`}
-      >
-        {done ? '✓' : ''}
-      </span>
-      <span className={done ? 'text-black' : 'text-gray-400'}>
-        {label} {done && doneAt ? `· ${doneAt}` : done ? '' : '(menunggu)'}
-      </span>
+    <article className="card" style={{ overflow: 'hidden' }}>
+      <div style={{ height: '190px', background: '#F3F0FF' }}>
+        {listing?.photo_urls && listing.photo_urls.length > 0 ? (
+          <img src={listing.photo_urls[0]} alt={listing.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>No Photo</div>
+        )}
+      </div>
+      <div style={{ padding: '14px' }}>
+        <p className="section-label">{role}</p>
+        <h2 style={{ fontSize: '17px', fontWeight: 800, marginBottom: '4px' }}>{listing?.title || 'Listing tidak bisa dimuat'}</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '8px' }}>
+          @{profile?.username || 'user'} | {listing?.category || '-'}{listing?.brand ? ` | ${listing.brand}` : ''}
+        </p>
+        <p style={{ color: 'var(--primary)', fontWeight: 800, marginBottom: '8px' }}>{formatRupiah(listing?.estimated_value)}</p>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{listing?.condition_notes || 'Tidak ada catatan kondisi.'}</p>
+      </div>
+    </article>
+  )
+}
+
+function FeeBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: 'var(--bg)', borderRadius: '8px', padding: '10px' }}>
+      <p className="section-label">{label}</p>
+      <p style={{ fontSize: '15px', fontWeight: 800 }}>{value}</p>
     </div>
   )
 }
