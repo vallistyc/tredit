@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -35,278 +35,462 @@ type Deal = {
   verification_reported_at: string | null
 }
 
-type ListingMini = { id: string; title: string }
+type ListingMini = {
+  id: string
+  title: string
+  photo_urls: string[] | null
+}
+
+type ProfileMini = {
+  id: string
+  username: string
+}
+
+type ReportFormValue = {
+  is_authentic: boolean
+  is_condition_match: boolean
+  notes: string
+}
+
+type VerificationReport = ReportFormValue & {
+  listing_id: string
+}
+
+const emptyReport: ReportFormValue = {
+  is_authentic: true,
+  is_condition_match: true,
+  notes: '',
+}
+
+function formatDate(value: string | null) {
+  if (!value) return ''
+  return new Date(value).toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 export default function VerifierWorkPage() {
   const params = useParams()
   const router = useRouter()
   const dealId = params.id as string
 
+  const [userId, setUserId] = useState<string | null>(null)
+  const [isVerifier, setIsVerifier] = useState(false)
   const [deal, setDeal] = useState<Deal | null>(null)
   const [listingA, setListingA] = useState<ListingMini | null>(null)
   const [listingB, setListingB] = useState<ListingMini | null>(null)
+  const [recipientA, setRecipientA] = useState<ProfileMini | null>(null)
+  const [recipientB, setRecipientB] = useState<ProfileMini | null>(null)
+  const [reportA, setReportA] = useState<ReportFormValue>(emptyReport)
+  const [reportB, setReportB] = useState<ReportFormValue>(emptyReport)
+  const [reportsExist, setReportsExist] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
-  // Form verifikasi per barang
-  const [reportA, setReportA] = useState({ is_authentic: true, is_condition_match: true, notes: '' })
-  const [reportB, setReportB] = useState({ is_authentic: true, is_condition_match: true, notes: '' })
-  const [reportsExist, setReportsExist] = useState(false)
-
-  useEffect(() => {
-    fetchDeal()
-  }, [dealId])
-
-  async function fetchDeal() {
+  const loadDeal = useCallback(async () => {
     setLoading(true)
-    setErrorMsg('')
+    setError('')
 
-    const { data: dealData, error } = await supabase
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    setUserId(user.id)
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_verifier')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.is_verifier !== true) {
+      setIsVerifier(false)
+      setLoading(false)
+      return
+    }
+
+    setIsVerifier(true)
+
+    const { data: dealData, error: dealError } = await supabase
       .from('deals')
       .select('*')
       .eq('id', dealId)
       .single()
 
-    if (error || !dealData) {
-      setErrorMsg('Deal tidak ditemukan atau kamu tidak punya akses')
+    if (dealError || !dealData) {
+      setError('Deal tidak ditemukan atau kamu tidak punya akses.')
       setLoading(false)
       return
     }
 
-    setDeal(dealData as Deal)
+    const typedDeal = dealData as Deal
+    setDeal(typedDeal)
 
-    const [{ data: lA }, { data: lB }] = await Promise.all([
-      supabase.from('listings').select('id, title').eq('id', dealData.side_a_listing_id).single(),
-      supabase.from('listings').select('id, title').eq('id', dealData.side_b_listing_id).single(),
-    ])
-    setListingA(lA as ListingMini)
-    setListingB(lB as ListingMini)
+    const [{ data: listingsData }, { data: profilesData }, { data: reportsData }] =
+      await Promise.all([
+        supabase
+          .from('listings')
+          .select('id, title, photo_urls')
+          .in('id', [typedDeal.side_a_listing_id, typedDeal.side_b_listing_id]),
+        supabase
+          .from('profiles')
+          .select('id, username')
+          .in('id', [typedDeal.side_a_recipient_id, typedDeal.side_b_recipient_id]),
+        supabase
+          .from('verification_reports')
+          .select('listing_id, is_authentic, is_condition_match, notes')
+          .eq('deal_id', dealId),
+      ])
 
-    const { data: existingReports } = await supabase
-      .from('verification_reports')
-      .select('*')
-      .eq('deal_id', dealId)
+    const listings = (listingsData || []) as ListingMini[]
+    const profiles = (profilesData || []) as ProfileMini[]
+    const reports = (reportsData || []) as VerificationReport[]
+    const existingA = reports.find(report => report.listing_id === typedDeal.side_a_listing_id)
+    const existingB = reports.find(report => report.listing_id === typedDeal.side_b_listing_id)
 
-    if (existingReports && existingReports.length > 0) {
-      setReportsExist(true)
-      const rA = existingReports.find((r) => r.listing_id === dealData.side_a_listing_id)
-      const rB = existingReports.find((r) => r.listing_id === dealData.side_b_listing_id)
-      if (rA) setReportA({ is_authentic: rA.is_authentic, is_condition_match: rA.is_condition_match, notes: rA.notes ?? '' })
-      if (rB) setReportB({ is_authentic: rB.is_authentic, is_condition_match: rB.is_condition_match, notes: rB.notes ?? '' })
-    }
-
+    setListingA(listings.find(listing => listing.id === typedDeal.side_a_listing_id) || null)
+    setListingB(listings.find(listing => listing.id === typedDeal.side_b_listing_id) || null)
+    setRecipientA(profiles.find(item => item.id === typedDeal.side_a_recipient_id) || null)
+    setRecipientB(profiles.find(item => item.id === typedDeal.side_b_recipient_id) || null)
+    setReportA(existingA ? toReportForm(existingA) : emptyReport)
+    setReportB(existingB ? toReportForm(existingB) : emptyReport)
+    setReportsExist(Boolean(existingA && existingB))
     setLoading(false)
-  }
+  }, [dealId, router])
 
-  async function updateDealField(fields: Partial<Deal>) {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadDeal()
+  }, [loadDeal])
+
+  const canWork = Boolean(isVerifier && userId && deal?.verifier_id === userId)
+  const bothInitialReceived = Boolean(deal?.side_a_received && deal?.side_b_received)
+  const reportSent = Boolean(deal?.verification_reported_at)
+  const bothCrossReceived = Boolean(deal?.side_a_cross_received && deal?.side_b_cross_received)
+
+  const stage = useMemo(() => {
+    if (!deal) return 1
+    if (!bothInitialReceived) return 1
+    if (!reportsExist) return 2
+    if (!reportSent) return 3
+    return 4
+  }, [bothInitialReceived, deal, reportSent, reportsExist])
+
+  async function updateDealFields(fields: Partial<Deal>) {
+    if (!deal || !userId) return
+
     setBusy(true)
-    setErrorMsg('')
-    const { error } = await supabase.from('deals').update(fields).eq('id', dealId)
-    setBusy(false)
-    if (error) {
-      setErrorMsg('Gagal update: ' + error.message)
-      return
-    }
-    fetchDeal()
-  }
+    setError('')
+    setNotice('')
 
-  async function handleSubmitReports() {
-    if (!deal) return
-    setBusy(true)
-    setErrorMsg('')
+    const { error: updateError } = await supabase
+      .from('deals')
+      .update(fields)
+      .eq('id', deal.id)
+      .eq('verifier_id', userId)
 
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) {
+    if (updateError) {
+      setError('Gagal update deal: ' + updateError.message)
       setBusy(false)
       return
     }
 
-    // Hapus laporan lama (kalau ada) baru insert ulang, supaya bisa diedit sebelum dikirim
-    await supabase.from('verification_reports').delete().eq('deal_id', dealId)
+    setBusy(false)
+    await loadDeal()
+  }
 
-    const { error } = await supabase.from('verification_reports').insert([
+  async function saveReports() {
+    if (!deal || !userId) return
+
+    setBusy(true)
+    setError('')
+    setNotice('')
+
+    await supabase.from('verification_reports').delete().eq('deal_id', deal.id)
+
+    const { error: insertError } = await supabase.from('verification_reports').insert([
       {
-        deal_id: dealId,
-        verifier_id: userData.user.id,
+        deal_id: deal.id,
+        verifier_id: userId,
         listing_id: deal.side_a_listing_id,
-        is_authentic: reportA.is_authentic,
-        is_condition_match: reportA.is_condition_match,
-        notes: reportA.notes,
+        ...reportA,
       },
       {
-        deal_id: dealId,
-        verifier_id: userData.user.id,
+        deal_id: deal.id,
+        verifier_id: userId,
         listing_id: deal.side_b_listing_id,
-        is_authentic: reportB.is_authentic,
-        is_condition_match: reportB.is_condition_match,
-        notes: reportB.notes,
+        ...reportB,
       },
     ])
 
-    setBusy(false)
-
-    if (error) {
-      setErrorMsg('Gagal simpan laporan: ' + error.message)
+    if (insertError) {
+      setError('Gagal simpan laporan: ' + insertError.message)
+      setBusy(false)
       return
     }
 
+    setNotice('Laporan verifikasi tersimpan.')
     setReportsExist(true)
-    fetchDeal()
+    setBusy(false)
+    await loadDeal()
   }
 
-  async function handleSendReportToParties() {
-    await updateDealField({
+  async function sendReport() {
+    await updateDealFields({
       verification_reported_at: new Date().toISOString(),
       status: 'verified',
     })
   }
 
-  async function handleComplete() {
-    await updateDealField({ status: 'completed' })
+  async function completeDeal() {
+    await updateDealFields({ status: 'completed' })
   }
 
-  if (loading) return <p className="p-6">Memuat...</p>
-  if (errorMsg && !deal) return <p className="p-6 text-red-600">{errorMsg}</p>
-  if (!deal) return null
+  if (loading) {
+    return (
+      <main style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #F7F6FB 0%, #FDFDFF 100%)', padding: '28px 16px' }}>
+        <div className="card" style={{ maxWidth: '600px', margin: '0 auto', padding: '32px', textAlign: 'center', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          Memuat tugas...
+        </div>
+      </main>
+    )
+  }
 
-  const bothInitialReceived = deal.side_a_received && deal.side_b_received
-  const bothCrossReceived = deal.side_a_cross_received && deal.side_b_cross_received
-  const reportSent = !!deal.verification_reported_at
+  if (!isVerifier) {
+    return (
+      <main style={{ minHeight: '100vh', background: 'var(--bg)', padding: '28px 16px' }}>
+        <div className="card" style={{ maxWidth: '600px', margin: '0 auto', padding: '18px', border: '1px solid #FECACA', background: '#FEF2F2' }}>
+          Halaman ini khusus untuk Verifikator
+        </div>
+      </main>
+    )
+  }
+
+  if (!deal) {
+    return (
+      <main style={{ minHeight: '100vh', background: 'var(--bg)', padding: '28px 16px' }}>
+        <div className="card" style={{ maxWidth: '600px', margin: '0 auto', padding: '18px', border: '1px solid #FECACA', background: '#FEF2F2', color: 'var(--danger)' }}>
+          {error || 'Deal tidak ditemukan.'}
+        </div>
+      </main>
+    )
+  }
 
   return (
-    <div className="max-w-[600px] mx-auto p-6">
-      <button onClick={() => router.push('/verifier')} className="mb-4 cursor-pointer">
-        ← Kembali ke daftar tugas
-      </button>
+    <main style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #F7F6FB 0%, #FDFDFF 100%)', padding: '28px 16px 120px' }}>
+      <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+        <button
+          onClick={() => router.push('/verifier')}
+          style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: '16px', padding: 0, fontWeight: 800 }}
+        >
+          Kembali ke daftar tugas
+        </button>
 
-      <h1 className="text-2xl font-bold">Verifikasi Deal</h1>
-      <p className="text-[13px] text-muted">
-        Status saat ini: <strong>{deal.status}</strong>
-      </p>
+        <header className="card" style={{ padding: '18px', marginBottom: '14px', border: '1px solid var(--border)', boxShadow: '0 10px 30px rgba(26,26,46,0.07)' }}>
+          <p className="section-label" style={{ color: 'var(--primary)' }}>Deal #{deal.id.slice(0, 8)}</p>
+          <h1 style={{ fontSize: '26px', fontWeight: 900 }}>Verifikasi Deal</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>Status: {deal.status}</p>
+        </header>
 
-      {errorMsg && <p className="text-red-600">{errorMsg}</p>}
-
-      {/* TAHAP 1: Etape Owner -> Verifikator */}
-      <Section title="Tahap 1 — Penerimaan Barang dari Owner">
-        <ShippingRow
-          label={`Barang A (${listingA?.title ?? '...'})`}
-          shipped={deal.side_a_shipped}
-          shippedAt={deal.side_a_shipped_at}
-          received={deal.side_a_received}
-          receivedAt={deal.side_a_received_at}
-          onMarkShipped={() => updateDealField({ side_a_shipped: true, side_a_shipped_at: new Date().toISOString() })}
-          onMarkReceived={() => updateDealField({ side_a_received: true, side_a_received_at: new Date().toISOString() })}
-          busy={busy}
-        />
-        <ShippingRow
-          label={`Barang B (${listingB?.title ?? '...'})`}
-          shipped={deal.side_b_shipped}
-          shippedAt={deal.side_b_shipped_at}
-          received={deal.side_b_received}
-          receivedAt={deal.side_b_received_at}
-          onMarkShipped={() => updateDealField({ side_b_shipped: true, side_b_shipped_at: new Date().toISOString() })}
-          onMarkReceived={() => updateDealField({ side_b_received: true, side_b_received_at: new Date().toISOString() })}
-          busy={busy}
-        />
-      </Section>
-
-      {/* TAHAP 2: Form verifikasi keaslian, hanya aktif kalau kedua barang sudah diterima */}
-      <Section title="Tahap 2 — Verifikasi Keaslian">
-        {!bothInitialReceived && (
-          <p className="text-[13px] text-muted">
-            Menunggu kedua barang diterima dulu sebelum verifikasi bisa diisi.
-          </p>
+        {!canWork && (
+          <div className="card" style={{ padding: '14px', marginBottom: '14px', border: '1px solid #FFB800', background: '#FFF8E7', color: '#92640A', fontSize: '14px' }}>
+            Tugas ini belum menjadi milikmu. Ambil tugas dari dashboard verifikator terlebih dahulu.
+          </div>
         )}
 
-        {bothInitialReceived && (
-          <>
-            <ReportForm title={listingA?.title ?? 'Barang A'} value={reportA} onChange={setReportA} disabled={reportSent} />
-            <ReportForm title={listingB?.title ?? 'Barang B'} value={reportB} onChange={setReportB} disabled={reportSent} />
-
-            {!reportSent && (
-              <button
-                onClick={handleSubmitReports}
-                disabled={busy}
-                className="mt-2 px-4 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
-              >
-                {reportsExist ? 'Update Laporan' : 'Simpan Laporan'}
-              </button>
-            )}
-          </>
+        {notice && (
+          <div className="card" style={{ padding: '13px 15px', marginBottom: '12px', border: '1px solid #FFB800', background: '#FFF8E7', color: '#92640A', fontSize: '13px' }}>
+            {notice}
+          </div>
         )}
-      </Section>
 
-      {/* TAHAP 3: Kirim laporan ke kedua pihak */}
-      <Section title="Tahap 3 — Pelaporan Hasil">
-        {reportSent ? (
-          <p className="text-[13px] text-success">
-            ✓ Laporan sudah dikirim ke kedua pihak pada {new Date(deal.verification_reported_at!).toLocaleString('id-ID')}
-          </p>
-        ) : (
-          <button
-            onClick={handleSendReportToParties}
-            disabled={busy || !reportsExist}
-            className="px-4 py-2 bg-primary text-white border-none rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-default"
-          >
-            Kirim Laporan ke Kedua Pihak
-          </button>
+        {error && (
+          <div className="card" style={{ padding: '13px 15px', marginBottom: '12px', border: '1px solid #FECACA', background: '#FEF2F2', color: 'var(--danger)', fontSize: '13px' }}>
+            {error}
+          </div>
         )}
-      </Section>
 
-      {/* TAHAP 4: Cross-shipping ke penerima asli */}
-      <Section title="Tahap 4 — Cross-Shipping ke Penerima Asli">
-        {!reportSent && <p className="text-[13px] text-muted">Menunggu laporan verifikasi dikirim dulu.</p>}
+        <StageHeader active={stage} />
+
+        <Section title="Tahap 1 - Penerimaan Barang dari Owner">
+          <ShippingRow
+            label={`Side A - ${listingA?.title || 'Barang A'}`}
+            shipped={deal.side_a_shipped}
+            shippedAt={deal.side_a_shipped_at}
+            received={deal.side_a_received}
+            receivedAt={deal.side_a_received_at}
+            disabled={!canWork || reportSent}
+            onMarkShipped={() => updateDealFields({ side_a_shipped: true, side_a_shipped_at: new Date().toISOString() })}
+            onMarkReceived={() => updateDealFields({ side_a_received: true, side_a_received_at: new Date().toISOString() })}
+            busy={busy}
+          />
+          <ShippingRow
+            label={`Side B - ${listingB?.title || 'Barang B'}`}
+            shipped={deal.side_b_shipped}
+            shippedAt={deal.side_b_shipped_at}
+            received={deal.side_b_received}
+            receivedAt={deal.side_b_received_at}
+            disabled={!canWork || reportSent}
+            onMarkShipped={() => updateDealFields({ side_b_shipped: true, side_b_shipped_at: new Date().toISOString() })}
+            onMarkReceived={() => updateDealFields({ side_b_received: true, side_b_received_at: new Date().toISOString() })}
+            busy={busy}
+          />
+        </Section>
+
+        <Section title="Tahap 2 - Verifikasi Keaslian">
+          {!bothInitialReceived && (
+            <p className="text-sm text-muted">Form aktif setelah kedua barang diterima verifikator.</p>
+          )}
+
+          <ReportForm
+            title={listingA?.title || 'Barang A'}
+            value={reportA}
+            onChange={setReportA}
+            disabled={!canWork || !bothInitialReceived || reportSent}
+          />
+          <ReportForm
+            title={listingB?.title || 'Barang B'}
+            value={reportB}
+            onChange={setReportB}
+            disabled={!canWork || !bothInitialReceived || reportSent}
+          />
+
+          {!reportSent && (
+            <button
+              onClick={saveReports}
+              disabled={busy || !canWork || !bothInitialReceived}
+              style={primaryButtonStyle(busy || !canWork || !bothInitialReceived)}
+            >
+              {reportsExist ? 'Update Laporan' : 'Simpan Laporan'}
+            </button>
+          )}
+        </Section>
+
+        <Section title="Tahap 3 - Pelaporan Hasil">
+          {reportSent ? (
+            <p className="text-sm font-semibold text-success">
+              Laporan sudah dikirim pada {formatDate(deal.verification_reported_at)}
+            </p>
+          ) : (
+            <button
+              onClick={sendReport}
+              disabled={busy || !canWork || !reportsExist}
+              style={primaryButtonStyle(busy || !canWork || !reportsExist)}
+            >
+              Kirim Laporan ke Kedua Pihak
+            </button>
+          )}
+        </Section>
+
         {reportSent && (
-          <>
+          <Section title="Tahap 4 - Cross-Shipping ke Penerima Asli">
             <ShippingRow
-              label={`Barang A → ke @${deal.side_a_recipient_id.slice(0, 8)}...`}
+              label={`Side A -> @${recipientA?.username || deal.side_a_recipient_id.slice(0, 8)}`}
               shipped={deal.side_a_cross_shipped}
               shippedAt={deal.side_a_cross_shipped_at}
               received={deal.side_a_cross_received}
               receivedAt={deal.side_a_cross_received_at}
-              onMarkShipped={() => updateDealField({ side_a_cross_shipped: true, side_a_cross_shipped_at: new Date().toISOString() })}
-              onMarkReceived={() => updateDealField({ side_a_cross_received: true, side_a_cross_received_at: new Date().toISOString() })}
+              disabled={!canWork || deal.status === 'completed'}
+              onMarkShipped={() => updateDealFields({ side_a_cross_shipped: true, side_a_cross_shipped_at: new Date().toISOString() })}
+              onMarkReceived={() => updateDealFields({ side_a_cross_received: true, side_a_cross_received_at: new Date().toISOString() })}
               busy={busy}
             />
             <ShippingRow
-              label={`Barang B → ke @${deal.side_b_recipient_id.slice(0, 8)}...`}
+              label={`Side B -> @${recipientB?.username || deal.side_b_recipient_id.slice(0, 8)}`}
               shipped={deal.side_b_cross_shipped}
               shippedAt={deal.side_b_cross_shipped_at}
               received={deal.side_b_cross_received}
               receivedAt={deal.side_b_cross_received_at}
-              onMarkShipped={() => updateDealField({ side_b_cross_shipped: true, side_b_cross_shipped_at: new Date().toISOString() })}
-              onMarkReceived={() => updateDealField({ side_b_cross_received: true, side_b_cross_received_at: new Date().toISOString() })}
+              disabled={!canWork || deal.status === 'completed'}
+              onMarkShipped={() => updateDealFields({ side_b_cross_shipped: true, side_b_cross_shipped_at: new Date().toISOString() })}
+              onMarkReceived={() => updateDealFields({ side_b_cross_received: true, side_b_cross_received_at: new Date().toISOString() })}
               busy={busy}
             />
-          </>
+          </Section>
         )}
-      </Section>
 
-      {/* SELESAI */}
-      {bothCrossReceived && deal.status !== 'completed' && (
-        <button
-          onClick={handleComplete}
-          disabled={busy}
-          className="w-full py-3 bg-success text-white border-none rounded-lg cursor-pointer font-bold disabled:opacity-50 disabled:cursor-default"
-        >
-          Tandai Deal Selesai
-        </button>
-      )}
+        {bothCrossReceived && deal.status !== 'completed' && (
+          <button
+            onClick={completeDeal}
+            disabled={busy || !canWork}
+            style={{
+              ...primaryButtonStyle(busy || !canWork),
+              width: '100%',
+              background: '#166534',
+              boxShadow: busy || !canWork ? 'none' : '0 10px 18px rgba(22,101,52,0.2)',
+            }}
+          >
+            Tandai Deal Selesai
+          </button>
+        )}
 
-      {deal.status === 'completed' && (
-        <p className="text-center font-bold text-success">✓ Deal Selesai</p>
-      )}
+        {deal.status === 'completed' && (
+          <div className="card" style={{ padding: '16px', textAlign: 'center', color: '#166534', border: '1px solid #166534', background: '#EAFBF1', fontWeight: 900 }}>
+            Deal Selesai
+          </div>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function toReportForm(report: VerificationReport): ReportFormValue {
+  return {
+    is_authentic: report.is_authentic,
+    is_condition_match: report.is_condition_match,
+    notes: report.notes || '',
+  }
+}
+
+function StageHeader({ active }: { active: number }) {
+  const stages = ['Terima', 'Verifikasi', 'Laporan', 'Cross-Ship']
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '14px' }}>
+      {stages.map((stage, index) => {
+        const step = index + 1
+        const isActive = step === active
+        const isDone = step < active
+        return (
+          <div
+            key={stage}
+            style={{
+              border: '1px solid',
+              borderColor: isActive || isDone ? 'var(--primary)' : 'var(--border)',
+              background: isActive || isDone ? '#F3F0FF' : 'white',
+              color: isActive || isDone ? 'var(--primary)' : 'var(--text-muted)',
+              borderRadius: '12px',
+              padding: '10px 6px',
+              textAlign: 'center',
+              fontSize: '12px',
+              fontWeight: 900,
+              boxShadow: isActive ? '0 8px 20px rgba(91,63,224,0.12)' : 'none',
+            }}
+          >
+            {stage}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border border-line rounded-xl p-4 mb-4">
-      <h3 className="mt-0 mb-3 text-[15px] font-semibold">{title}</h3>
+    <section className="card" style={{ padding: '16px', marginBottom: '14px', border: '1px solid var(--border)', boxShadow: '0 10px 30px rgba(26,26,46,0.06)' }}>
+      <h2 style={{ fontSize: '17px', fontWeight: 900, marginBottom: '12px' }}>{title}</h2>
       {children}
-    </div>
+    </section>
   )
 }
 
@@ -316,6 +500,7 @@ function ShippingRow({
   shippedAt,
   received,
   receivedAt,
+  disabled,
   onMarkShipped,
   onMarkReceived,
   busy,
@@ -325,31 +510,28 @@ function ShippingRow({
   shippedAt: string | null
   received: boolean
   receivedAt: string | null
+  disabled: boolean
   onMarkShipped: () => void
   onMarkReceived: () => void
   busy: boolean
 }) {
   return (
-    <div className="mb-3">
-      <p className="mb-1 text-sm font-semibold">{label}</p>
-      <div className="flex gap-2">
+    <div style={{ marginBottom: '10px', borderRadius: '12px', background: 'var(--bg)', padding: '12px' }}>
+      <p style={{ marginBottom: '10px', fontSize: '14px', fontWeight: 900 }}>{label}</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
         <button
           onClick={onMarkShipped}
-          disabled={busy || shipped}
-          className={`flex-1 py-1.5 text-[13px] border border-line-strong rounded-md ${
-            shipped ? 'bg-success-bg text-success cursor-default' : 'bg-white text-gray-800 cursor-pointer'
-          }`}
+          disabled={busy || disabled || shipped}
+          style={shippingButtonStyle(shipped, busy || disabled || shipped)}
         >
-          {shipped ? `✓ Dikirim ${shippedAt ? new Date(shippedAt).toLocaleDateString('id-ID') : ''}` : 'Tandai Dikirim'}
+          {shipped ? `Dikirim ${formatDate(shippedAt)}` : 'Tandai Dikirim'}
         </button>
         <button
           onClick={onMarkReceived}
-          disabled={busy || !shipped || received}
-          className={`flex-1 py-1.5 text-[13px] border border-line-strong rounded-md ${
-            received ? 'bg-success-bg text-success cursor-default' : 'bg-white text-gray-800'
-          } ${!shipped || received ? 'cursor-default' : 'cursor-pointer'}`}
+          disabled={busy || disabled || !shipped || received}
+          style={shippingButtonStyle(received, busy || disabled || !shipped || received)}
         >
-          {received ? `✓ Diterima ${receivedAt ? new Date(receivedAt).toLocaleDateString('id-ID') : ''}` : 'Tandai Diterima'}
+          {received ? `Diterima ${formatDate(receivedAt)}` : 'Tandai Diterima'}
         </button>
       </div>
     </div>
@@ -363,39 +545,69 @@ function ReportForm({
   disabled,
 }: {
   title: string
-  value: { is_authentic: boolean; is_condition_match: boolean; notes: string }
-  onChange: (v: { is_authentic: boolean; is_condition_match: boolean; notes: string }) => void
+  value: ReportFormValue
+  onChange: (value: ReportFormValue) => void
   disabled: boolean
 }) {
   return (
-    <div className="mb-4 pb-4 border-b border-line-light">
-      <p className="font-semibold text-sm">{title}</p>
-      <label className="block text-[13px] mb-1">
+    <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+      <p style={{ fontSize: '14px', fontWeight: 900, marginBottom: '10px' }}>{title}</p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginBottom: '8px' }}>
         <input
           type="checkbox"
           checked={value.is_authentic}
           disabled={disabled}
-          onChange={(e) => onChange({ ...value, is_authentic: e.target.checked })}
-        />{' '}
-        Barang asli (authentic)
+          onChange={event => onChange({ ...value, is_authentic: event.target.checked })}
+        />
+        Barang authentic
       </label>
-      <label className="block text-[13px] mb-1">
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginBottom: '8px' }}>
         <input
           type="checkbox"
           checked={value.is_condition_match}
           disabled={disabled}
-          onChange={(e) => onChange({ ...value, is_condition_match: e.target.checked })}
-        />{' '}
-        Kondisi sesuai deskripsi
+          onChange={event => onChange({ ...value, is_condition_match: event.target.checked })}
+        />
+        Kondisi sesuai
       </label>
       <textarea
-        placeholder="Catatan verifikasi (opsional)"
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px', fontSize: '14px', outline: 'none', background: disabled ? 'var(--bg)' : 'white' }}
+        rows={3}
+        placeholder="Catatan verifikasi"
         value={value.notes}
         disabled={disabled}
-        onChange={(e) => onChange({ ...value, notes: e.target.value })}
-        rows={2}
-        className="w-full mt-1 text-[13px] border border-line rounded-md p-1.5"
+        onChange={event => onChange({ ...value, notes: event.target.value })}
       />
     </div>
   )
+}
+
+function primaryButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    border: 'none',
+    background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
+    color: 'white',
+    borderRadius: '10px',
+    padding: '11px 14px',
+    fontSize: '14px',
+    fontWeight: 900,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.6 : 1,
+    boxShadow: disabled ? 'none' : '0 10px 18px rgba(91,63,224,0.22)',
+  }
+}
+
+function shippingButtonStyle(active: boolean, disabled: boolean): React.CSSProperties {
+  return {
+    border: '1px solid',
+    borderColor: active ? '#166534' : 'var(--border)',
+    background: active ? '#EAFBF1' : 'white',
+    color: active ? '#166534' : 'var(--text)',
+    borderRadius: '10px',
+    padding: '9px 10px',
+    fontSize: '12px',
+    fontWeight: 900,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled && !active ? 0.65 : 1,
+  }
 }

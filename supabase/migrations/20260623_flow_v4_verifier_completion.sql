@@ -1,28 +1,6 @@
 -- Flow TREDIT v4 verifier, completion, and refund demo support.
 -- Run after 20260623_flow_v4_deals.sql.
 
-alter table public.profiles
-  add column if not exists app_role text not null default 'user';
-
-do $$
-declare
-  constraint_name text;
-begin
-  select conname into constraint_name
-  from pg_constraint
-  where conrelid = 'public.profiles'::regclass
-    and contype = 'c'
-    and pg_get_constraintdef(oid) like '%app_role%';
-
-  if constraint_name is not null then
-    execute format('alter table public.profiles drop constraint %I', constraint_name);
-  end if;
-end $$;
-
-alter table public.profiles
-  add constraint profiles_app_role_check
-  check (app_role in ('user', 'verifier'));
-
 do $$
 declare
   constraint_name text;
@@ -37,19 +15,6 @@ begin
     execute format('alter table public.bids drop constraint %I', constraint_name);
   end if;
 end $$;
-
-drop policy if exists "Verifier can view all listings" on public.listings;
-
-create policy "Verifier can view all listings"
-  on public.listings for select to authenticated
-  using (
-    exists (
-      select 1
-      from public.profiles
-      where id = auth.uid()
-        and app_role = 'verifier'
-    )
-  );
 
 alter table public.bids
   add constraint bids_status_check
@@ -66,26 +31,27 @@ alter table public.bids
     'refund_both_invalid'
   ));
 
-drop policy if exists "Verifier demo can view active deals" on public.bids;
-
-create policy "Verifier demo can view active deals"
-  on public.bids for select to authenticated
-  using (
-    status in (
-      'accepted',
-      'verification_passed',
-      'completed',
-      'refund_pitcher_invalid',
-      'refund_catcher_invalid',
-      'refund_both_invalid'
-    )
-    and exists (
-      select 1
-      from public.profiles
-      where id = auth.uid()
-        and app_role = 'verifier'
-    )
-  );
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'bids'
+      and policyname = 'Verifier demo can view active deals'
+  ) then
+    create policy "Verifier demo can view active deals"
+      on public.bids for select to authenticated
+      using (status in (
+        'accepted',
+        'verification_passed',
+        'completed',
+        'refund_pitcher_invalid',
+        'refund_catcher_invalid',
+        'refund_both_invalid'
+      ));
+  end if;
+end $$;
 
 create or replace function public.verify_bid_v4(
   p_bid_id uuid,
@@ -101,15 +67,6 @@ declare
   selected_bid public.bids%rowtype;
   next_status text;
 begin
-  if not exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and app_role = 'verifier'
-  ) then
-    raise exception 'Only verifier can verify deals';
-  end if;
-
   select * into selected_bid
   from public.bids
   where id = p_bid_id
@@ -156,15 +113,6 @@ as $$
 declare
   selected_bid public.bids%rowtype;
 begin
-  if not exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and app_role = 'verifier'
-  ) then
-    raise exception 'Only verifier can complete deals';
-  end if;
-
   select * into selected_bid
   from public.bids
   where id = p_bid_id

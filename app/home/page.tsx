@@ -6,7 +6,6 @@ import Navbar from '../components/Navbar'
 import { createClient } from '@/lib/supabase/client'
 
 const supabase = createClient()
-import { getCurrentAppRole } from '@/lib/authRole'
 
 type Listing = {
   id: string
@@ -55,17 +54,46 @@ export default function HomePage() {
       setLoading(true)
       setError('')
 
-      const { user, role } = await getCurrentAppRole()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
       if (!user) {
         router.push('/login')
         return
       }
 
-      if (role === 'verifier') {
-        router.push('/verifier')
+      const { data: myListingRows, error: myListingError } = await supabase
+        .from('listings')
+        .select('id')
+        .eq('owner_id', user.id)
+
+      if (myListingError) {
+        setError('Gagal memuat listing milikmu: ' + myListingError.message)
+        setListings([])
+        setLoading(false)
         return
       }
+
+      const myListingIds = (myListingRows || []).map(item => item.id)
+
+      const { data: incomingBidRows, error: incomingBidError } = myListingIds.length
+        ? await supabase
+            .from('bids')
+            .select('offered_listing_id')
+            .in('listing_id', myListingIds)
+        : { data: [], error: null }
+
+      if (incomingBidError) {
+        setError('Gagal memuat bid masuk: ' + incomingBidError.message)
+        setListings([])
+        setLoading(false)
+        return
+      }
+
+      const hiddenOfferedListingIds = new Set(
+        (incomingBidRows || []).map(item => item.offered_listing_id as string)
+      )
 
       const { data, error: listingsError } = await supabase
         .from('listings')
@@ -81,8 +109,12 @@ export default function HomePage() {
         return
       }
 
+      const visibleMarketplaceListings = (data || []).filter(
+        item => !hiddenOfferedListingIds.has(item.id)
+      )
+
       const withCounts = await Promise.all(
-        (data || []).map(async item => {
+        visibleMarketplaceListings.map(async item => {
           const [{ count: incomingBidCount }, { count: outgoingOfferCount }] =
             await Promise.all([
               supabase

@@ -1,0 +1,43 @@
+[33mcommit 2b872b33a555049b07a14172e00ff79a16e895e3[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Tue Jun 23 14:33:37 2026 +0700
+
+    udah nambahin ssr
+
+[33mcommit 19fa0358ee3477ea0fbd6aec9cfdff9c1fae34e2[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Tue Jun 23 14:30:26 2026 +0700
+
+    4. tambahkan review antar user dan rating
+
+[33mcommit a0a65db7140822c0225139301d4791367c5ed6cc[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Tue Jun 23 14:26:12 2026 +0700
+
+    1. verifier nya perlu lebih comprehensive lagi sesuai dengan verifier di projek sebelumnya (cek histori claude vallistyc)
+    2. fetch home perlu diperbaiki (barang yang sudah di bid tidak akan muncul di fetch home
+    3. tambahkan stepper pada riwayat deals
+
+[33mcommit 59f530da288d7d3158a8934db81f3679a4cb84c1[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Tue Jun 23 10:36:46 2026 +0700
+
+    error
+
+[33mcommit 159aa9b328e35f062fc429665514f03007fd4e00[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Mon Jun 22 22:16:56 2026 +0700
+
+    asahjs
+
+[33mcommit 36ebf216c78e280383ee22502b5d3c893ffcce71[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Sun Jun 21 15:24:45 2026 +0700
+
+    edit navbar (dynamic sebelum log in dan sesudahnya) + tambahkan fitur log out)
+
+[33mcommit e519009a6033f1346f62a7ae0f294170d3da5761[m
+Author: vallistyc <ivaldhiohadisetyasa@gmail.com>
+Date:   Sun Jun 21 15:07:13 2026 +0700
+
+    flow ready

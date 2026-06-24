@@ -34,11 +34,22 @@ type Profile = {
   full_name: string | null
 }
 
+type Deal = {
+  id: string
+  bid_id: string
+  verifier_id: string | null
+}
+
+type VerifierProfile = {
+  id: string
+}
+
 type DealRow = {
   bid: Bid
   targetListing?: Listing
   offeredListing?: Listing
   bidder?: Profile
+  deal?: Deal
 }
 
 function formatRupiah(value?: number) {
@@ -85,6 +96,18 @@ function statusColor(status: string) {
     return { bg: '#FEF2F2', text: '#991B1B' }
   }
   return { bg: '#FFF8E7', text: '#92640A' }
+}
+
+async function getRandomVerifierId() {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('is_verifier', true)
+
+  const verifiers = (data || []) as VerifierProfile[]
+  if (verifiers.length === 0) return null
+
+  return verifiers[Math.floor(Math.random() * verifiers.length)].id
 }
 
 export default function DealsPage() {
@@ -163,8 +186,9 @@ export default function DealsPage() {
       new Set(allBids.flatMap(bid => [bid.listing_id, bid.offered_listing_id]))
     )
     const bidderIds = Array.from(new Set(allBids.map(bid => bid.bidder_id)))
+    const bidIds = Array.from(new Set(allBids.map(bid => bid.id)))
 
-    const [{ data: relatedListings }, { data: profiles }] = await Promise.all([
+    const [{ data: relatedListings }, { data: profiles }, { data: dealData }] = await Promise.all([
       listingIds.length
         ? supabase
             .from('listings')
@@ -176,6 +200,12 @@ export default function DealsPage() {
             .from('profiles')
             .select('id, username, full_name')
             .in('id', bidderIds)
+        : Promise.resolve({ data: [] }),
+      bidIds.length
+        ? supabase
+            .from('deals')
+            .select('id, bid_id, verifier_id')
+            .in('bid_id', bidIds)
         : Promise.resolve({ data: [] }),
     ])
 
@@ -189,16 +219,40 @@ export default function DealsPage() {
       profileMap.set(item.id, item as Profile)
     })
 
+    const dealMap = new Map<string, Deal>()
+    ;((dealData || []) as Deal[]).forEach(item => {
+      dealMap.set(item.bid_id, item)
+    })
+
     const toRows = (bids: Bid[]) =>
       bids.map(bid => ({
         bid,
         targetListing: listingMap.get(bid.listing_id),
         offeredListing: listingMap.get(bid.offered_listing_id),
         bidder: profileMap.get(bid.bidder_id),
+        deal: dealMap.get(bid.id),
       }))
 
-    setIncoming(toRows(incomingBids))
-    setOutgoing(toRows(outgoingBids))
+    const incomingRows = toRows(incomingBids)
+    const outgoingRows = toRows(outgoingBids)
+    const acceptedRowsWithoutDeal = [...incomingRows, ...outgoingRows].filter(
+      row => row.bid.status === 'accepted' && !row.deal
+    )
+
+    if (acceptedRowsWithoutDeal.length > 0) {
+      const createdDeals = await Promise.all(
+        acceptedRowsWithoutDeal.map(row => createDealForAcceptedBid(row))
+      )
+
+      createdDeals.forEach((result, index) => {
+        if (result.deal) {
+          acceptedRowsWithoutDeal[index].deal = result.deal
+        }
+      })
+    }
+
+    setIncoming(incomingRows)
+    setOutgoing(outgoingRows)
     setLoading(false)
   }, [router])
 
@@ -211,6 +265,67 @@ export default function DealsPage() {
     () => (activeTab === 'incoming' ? incoming : outgoing),
     [activeTab, incoming, outgoing]
   )
+
+  async function createDealForAcceptedBid(row: DealRow) {
+    if (!row.targetListing) {
+      return { deal: null, error: 'Listing Pitcher belum bisa dimuat.' }
+    }
+
+    const { data: existingDeal } = await supabase
+      .from('deals')
+      .select('id, bid_id, verifier_id')
+      .eq('bid_id', row.bid.id)
+      .maybeSingle()
+
+    if (existingDeal) {
+      return { deal: existingDeal as Deal, error: null }
+    }
+
+    const verifierId = await getRandomVerifierId()
+
+    const { data: createdDeal, error: createDealError } = await supabase
+      .from('deals')
+      .insert({
+        bid_id: row.bid.id,
+        side_a_listing_id: row.bid.listing_id,
+        side_a_owner_id: row.targetListing.owner_id,
+        side_a_recipient_id: row.bid.bidder_id,
+        side_b_listing_id: row.bid.offered_listing_id,
+        side_b_owner_id: row.bid.bidder_id,
+        side_b_recipient_id: row.targetListing.owner_id,
+        status: 'locked',
+        verifier_id: verifierId,
+      })
+      .select('id, bid_id, verifier_id')
+      .single()
+
+    if (createDealError) {
+      return { deal: null, error: createDealError.message }
+    }
+
+    return { deal: createdDeal as Deal, error: null }
+  }
+
+  async function openDealDetail(row: DealRow) {
+    setError('')
+    setNotice('')
+
+    if (row.deal?.id) {
+      router.push(`/deals/${row.deal.id}`)
+      return
+    }
+
+    setBusyBidId(row.bid.id)
+    const dealResult = await createDealForAcceptedBid(row)
+    setBusyBidId(null)
+
+    if (dealResult.deal?.id) {
+      router.push(`/deals/${dealResult.deal.id}`)
+      return
+    }
+
+    setError('Deal detail belum bisa dibuka: ' + (dealResult.error || 'record deal belum tersedia.'))
+  }
 
   async function rejectBid(row: DealRow) {
     setBusyBidId(row.bid.id)
@@ -251,7 +366,12 @@ export default function DealsPage() {
     const rpcResult = await supabase.rpc('accept_bid_v4', { p_bid_id: row.bid.id })
 
     if (!rpcResult.error) {
-      setNotice('Tawaran diterima. Bid lain otomatis dibatalkan dan kedua barang masuk Locked in Deal.')
+      const dealResult = await createDealForAcceptedBid(row)
+      setNotice(
+        dealResult.error
+          ? `Tawaran diterima, tapi deal verifikator belum dibuat: ${dealResult.error}`
+          : 'Tawaran diterima. Deal verifikator dibuat dan kedua barang masuk Locked in Deal.'
+      )
       setBusyBidId(null)
       setAcceptingRow(null)
       await loadDeals()
@@ -286,12 +406,16 @@ export default function DealsPage() {
       .update({ status: 'locked_in_deal' })
       .eq('id', row.bid.offered_listing_id)
 
+    const dealResult = await createDealForAcceptedBid(row)
+
     if (targetUpdate.error || offeredUpdate.error) {
       setNotice(
         'Tawaran diterima, tapi status listing belum bisa dikunci penuh. Jalankan migration flow v4 agar Hard Lock lintas user aktif.'
       )
+    } else if (dealResult.error) {
+      setNotice(`Tawaran diterima, tapi deal verifikator belum dibuat: ${dealResult.error}`)
     } else {
-      setNotice('Tawaran diterima. Kedua barang masuk tahap Locked in Deal.')
+      setNotice('Tawaran diterima. Deal verifikator dibuat dan kedua barang masuk tahap Locked in Deal.')
     }
 
     setBusyBidId(null)
@@ -442,7 +566,8 @@ export default function DealsPage() {
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         {row.bid.status !== 'pending' && (
                           <button
-                            onClick={() => router.push(`/deals/${row.bid.id}`)}
+                            onClick={() => openDealDetail(row)}
+                            disabled={busyBidId === row.bid.id}
                             style={{
                               border: '1px solid var(--border)',
                               background: 'var(--surface)',
@@ -450,10 +575,11 @@ export default function DealsPage() {
                               borderRadius: '8px',
                               padding: '9px 12px',
                               fontWeight: 700,
-                              cursor: 'pointer',
+                              cursor: busyBidId === row.bid.id ? 'not-allowed' : 'pointer',
+                              opacity: busyBidId === row.bid.id ? 0.6 : 1,
                             }}
                           >
-                            Detail
+                            {busyBidId === row.bid.id ? 'Membuka...' : 'Detail'}
                           </button>
                         )}
 
